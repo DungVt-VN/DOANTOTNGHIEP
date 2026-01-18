@@ -1,0 +1,299 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* --- 1. GLOBAL VARIABLES & RESET (SHADCN/TAILWIND STYLE) --- */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+
+    --radius: 0.5rem;
+  }
+
+  html {
+    height: 100%;
+  }
+
+  body {
+    height: 100%;
+    min-height: 100vh;
+    width: 100vw;
+    overflow-x: hidden;
+    margin: 0;
+    padding: 0;
+
+    font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    @apply bg-background text-foreground;
+  }
+
+  #root {
+    min-height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    isolation: isolate;
+  }
+
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+}
+
+/* --- CUSTOM SCROLLBAR --- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1; /* slate-300 */
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8; /* slate-400 */
+}
+
+.container {
+  width: 100%;
+  margin-right: auto;
+  margin-left: auto;
+  padding-right: 2rem;
+  padding-left: 2rem;
+}
+
+.MuiOutlinedInput-root {
+  background-color: var(--background);
+}
+
+/* --- 2. SCROLLBAR STYLING (Global) --- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #888;
+}
+
+.scroll-style {
+  overflow-y: auto;
+}
+
+/* --- 3. GENERAL HTML ELEMENTS --- */
+a {
+  font-weight: 500;
+  color: #646cff;
+  text-decoration: inherit;
+  transition: color 0.25s;
+}
+
+a:hover {
+  color: #535bf2;
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #1a1a1a;
+  color: white;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+
+button:hover {
+  border-color: #646cff;
+}
+
+button:focus,
+button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+
+/* Light mode override for standard elements */
+@media (prefers-color-scheme: light) {
+  button {
+    background-color: #f9f9f9;
+    color: #213547;
+  }
+}
+
+.container {
+  width: 100%;
+}
+
+.navbar {
+  border-bottom: 1px solid #dfe3e6;
+}
+
+.navbar-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.navbar-container .logo {
+  display: flex;
+}
+
+.navbar-container .logo img {
+  height: 50px;
+}
+
+.readonly-input {
+  @apply bg-gray-50 text-gray-800 font-semibold cursor-default;
+}
+
+.readonly-input input {
+  @apply font-semibold text-gray-800;
+}
+
+/* Links Section */
+.navbar-container .links {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.navbar-container .links a {
+  color: black;
+  text-decoration: none;
+  padding: 8px 12px;
+  transition: all 0.2s;
+}
+
+.navbar-container .links a:focus {
+  color: blueviolet;
+  background-color: #ededfc;
+  border-radius: 34px;
+}
+
+.navbar-container .links a:hover {
+  background-color: #ededfc;
+  border-radius: 34px;
+}
+
+.navbar-container .links h6 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 14px 10px;
+}
+
+.navbar-container .links span {
+  cursor: pointer;
+}
+
+.navbar-container .content {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.body-height {
+  height: calc(100vh - 64px);
+}
+
+/* --- 5. UTILITIES --- */
+.image-zoom {
+  transition: transform 0.4s ease-in;
+}
+
+.image-zoom:hover {
+  transform: scale(8) translateX(30px) translateY(-10px);
+  z-index: 1000;
+  position: relative;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+}
+
+/* Tab Styles */
+.MuiTab-root {
+  color: black !important;
+  text-transform: none !important;
+}
+
+.MuiTab-root.Mui-selected {
+  color: rgb(147 51 234) !important;
+  font-weight: 600 !important;
+}
+
+/* Table / Grid Padding override */
+.css-19midj6 {
+  padding: 0 !important;
+}
+
+/* Dialog Paper */
+.MuiDialog-paper {
+  max-width: max-content !important;
+  min-width: 600px;
+}
+
+/* Input Fields */
+.MuiOutlinedInput-root {
+  background: #fff;
+}
+
+.MuiOutlinedInput-input {
+  padding: 10px !important;
+  font-size: 14px !important;
+  border-radius: 4px;
+}
+
+.MuiOutlinedInput-notchedOutline {
+  border-color: rgb(229 231 235); /* gray-200 */
+}
+
+.Mui-focused .MuiOutlinedInput-notchedOutline {
+  border-color: rgb(59 130 246) !important; /* blue-500 */
+  border-width: 1px !important;
+}
