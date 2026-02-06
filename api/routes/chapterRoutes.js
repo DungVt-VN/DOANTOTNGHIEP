@@ -20,7 +20,9 @@ import {
   updateLesson,
   deleteLesson,
   getLessonsByChapter,
-  importLessonsToClass, // <--- MỚI: Import Lesson
+  importLessonsToClass,
+  updateProgress,
+  getStudentProgress, // <--- MỚI: Import Lesson
 } from "../controllers/Course/lessonController.js";
 
 const router = express.Router();
@@ -42,8 +44,8 @@ router.get("/chapters/class/:classId", getAllChapters);
 
 // CRUD Chapter
 router.post("/chapters", createChapter); // Tạo mới
-router.get("/chapters/:chapterId", getChapterById); 
-router.put("/chapters/:chapterId", updateChapter); 
+router.get("/chapters/:chapterId", getChapterById);
+router.put("/chapters/:chapterId", updateChapter);
 router.delete("/chapters/:chapterId", deleteChapter); // Xóa
 
 // =========================================================
@@ -60,5 +62,7 @@ router.post("/lessons", upload.single("file"), createLesson);
 router.put("/lessons", upload.single("file"), updateLesson);
 router.get("/lessons/:lessonId", getLessonById);
 router.delete("/lessons/:lessonId", deleteLesson);
+router.post("/progress", updateProgress);
+router.get("/progress/:userId", getStudentProgress);
 
 export default router;

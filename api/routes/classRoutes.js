@@ -25,6 +25,9 @@ import {
   registerClass,
   getAvailableClasses,
   getClassesForDistribution,
+  getClassCourseStudent,
+  getClassDetailStudent,
+  getStudentScheduleByWeek,
 } from "../controllers/Class/classController.js";
 import { authorize } from "../middlewares/authorize.js";
 import { authorizeRole } from "../middlewares/authorizeRole.js";
@@ -33,27 +36,29 @@ const upload = multer({ storage: multer.memoryStorage() });
 const router = express.Router();
 router.get("/all-classes-by-month", authorize, getAllClassesByMonth);
 router.get("/teacher-schedule-by-week", authorize, getTeacherScheduleByWeek);
+router.get("/student-schedule-by-week", authorize, getStudentScheduleByWeek);
 router.get("/detail/:classId", getClassDetail);
+router.get("/detail-student/:classId", authorize, getClassDetailStudent);
 router.get("/course", getClassesForDistribution);
 
 router.get(
-  "/student/classes/:studentId",
+  "/student/classes/:userId",
   authorize,
   authorizeRole("Student"),
-  getStudentClasses
+  getStudentClasses,
 );
 
 router.get(
   "/available-classes",
   authorize,
   authorizeRole("Student"),
-  getAvailableClasses
+  getAvailableClasses,
 );
 router.post(
   "/register-class",
   authorize,
   authorizeRole("Student"),
-  registerClass
+  registerClass,
 );
 
 router.get("/rooms/active", authorize, getActiveRooms);
@@ -62,17 +67,17 @@ router.get("/recruiting", authorize, getRecruitingClasses);
 router.get("/all-classes", authorize, getAllClasses);
 router.post("/check-schedule", authorize, checkScheduleAvailability);
 router.get("/:courseId", getClassCourse);
+router.get("/classes-by-course/:courseId", getClassCourseStudent);
 router.get("/:courseId/class/:classCode", getClassStudentByClassCode);
 router.get("/:courseId/classes/:classId", getClassStudent);
 router.get(
   "/enrollments/all",
   authorize,
   authorizeRole("Admin"),
-  getAllEnrollments
+  getAllEnrollments,
 );
 
 router.post("/:courseId", authorize, authorizeRole("Admin"), addClassCourse);
-
 router.put("/:id", authorize, authorizeRole("Admin"), updateClass);
 
 router.delete("/:classId", authorize, authorizeRole("Admin"), deleteClass);
@@ -82,7 +87,7 @@ router.post(
   "/:classId/add-single-student",
   authorize,
   authorizeRole("Admin"),
-  addSingleStudentToClass
+  addSingleStudentToClass,
 );
 
 router.post(
@@ -90,19 +95,19 @@ router.post(
   upload.single("file"),
   authorize,
   authorizeRole("Admin"),
-  addClassStudent
+  addClassStudent,
 );
 router.put(
   "/:classId/students/:studentId/tuition",
   authorize,
   authorizeRole("Admin"),
-  updateTuitionStatus
+  updateTuitionStatus,
 );
 router.delete(
   "/:classId/students/:studentId",
   authorize,
   authorizeRole("Admin"),
-  removeStudentFromClass
+  removeStudentFromClass,
 );
 
 export default router;

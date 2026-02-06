@@ -112,6 +112,74 @@ export const getClassCourse = async (req, res) => {
   }
 };
 
+export const getClassCourseStudent = async (req, res) => {
+  const courseId = req.params.courseId;
+
+  // Giả sử bạn lấy UserId từ token đăng nhập (middleware authentication)
+  // Nếu chưa đăng nhập (khách vãng lai), giá trị này có thể là null
+  const currentUserId = req.query.userId || null;
+  const q = `
+      SELECT 
+        cl.ClassId,
+        cl.ClassName,
+        cl.StartDate,
+        cl.EndDate,
+        cl.Days,
+        cl.StartTime,
+        cl.EndTime,
+        cl.MaxStudents,
+        cl.TuitionFee,
+        cl.Status,
+        
+        -- Thông tin giáo viên
+        t.FullName AS TeacherName, 
+        t.TeacherCode,
+        
+        -- Thông tin phòng học
+        cr.RoomName,
+        cr.Location as RoomLocation,
+
+        -- 1. Đếm số lượng học sinh đã đăng ký (Enrolled)
+        (
+          SELECT COUNT(*) 
+          FROM Class_Student cs 
+          WHERE cs.ClassId = cl.ClassId
+        ) AS Enrolled,
+
+        -- 2. Kiểm tra xem User hiện tại đã đăng ký lớp này chưa (IsRegistered)
+        -- Trả về 1 nếu đã đăng ký, 0 nếu chưa
+        (
+          SELECT COUNT(*)
+          FROM Class_Student cs
+          JOIN Students s ON cs.StudentId = s.StudentId
+          WHERE cs.ClassId = cl.ClassId 
+          AND s.UserId = ? 
+        ) AS IsRegistered
+
+      FROM Classes cl
+      LEFT JOIN Teachers t ON cl.TeacherId = t.TeacherId
+      LEFT JOIN Classrooms cr ON cl.RoomId = cr.RoomId
+      WHERE cl.CourseId = ? AND cl.Status != 'Finished' -- Chỉ lấy lớp chưa kết thúc
+      ORDER BY cl.StartDate ASC
+    `;
+
+  try {
+    // Truyền tham số theo đúng thứ tự: [currentUserId, courseId]
+    const data = await query(q, [currentUserId, courseId]);
+
+    // Convert IsRegistered từ số (1/0) sang boolean (true/false) cho frontend dễ dùng
+    const formattedData = data.map((cls) => ({
+      ...cls,
+      IsRegistered: cls.IsRegistered > 0,
+    }));
+
+    return res.status(200).json(formattedData);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json(err);
+  }
+};
+
 // --- 5. XÓA LỚP HỌC ---
 export const deleteClass = async (req, res) => {
   const classId = req.params.classId;
@@ -257,7 +325,7 @@ export const addClassStudent = async (req, res) => {
       .map(
         (row) =>
           row.StudentCode?.toString().trim() ||
-          row.MaSinhVien?.toString().trim()
+          row.MaSinhVien?.toString().trim(),
       )
       .filter((code) => code);
 
@@ -459,7 +527,7 @@ export const updateTuitionStatus = async (req, res) => {
       // 1. Lấy mức học phí của lớp
       const classRes = await query(
         "SELECT TuitionFee FROM Classes WHERE ClassId = ?",
-        [classId]
+        [classId],
       );
       const amount = classRes[0]?.TuitionFee || 0;
 
@@ -519,7 +587,7 @@ export const getClassDetail = async (req, res) => {
         LEFT JOIN Teachers t ON c.TeacherId = t.TeacherId
         LEFT JOIN Classrooms r ON c.RoomId = r.RoomId
         WHERE c.ClassId = ?`,
-        [classId]
+        [classId],
       ),
 
       // 2. Chapters (Lấy từ Master Content theo CourseId của lớp)
@@ -529,7 +597,7 @@ export const getClassDetail = async (req, res) => {
         JOIN Classes c ON cc.CourseId = c.CourseId
         WHERE c.ClassId = ? 
         ORDER BY cc.OrderIndex ASC`,
-        [classId]
+        [classId],
       ),
 
       // 3. Lessons (Lấy các bài học riêng của lớp này)
@@ -543,7 +611,7 @@ export const getClassDetail = async (req, res) => {
         SELECT d.* FROM LessonMaterials d
         JOIN Lessons l ON d.LessonId = l.LessonId
         WHERE l.ClassId = ?`,
-        [classId]
+        [classId],
       ),
 
       // 5. Students (Kèm trạng thái nộp tiền)
@@ -557,13 +625,13 @@ export const getClassDetail = async (req, res) => {
         JOIN Students s ON cs.StudentId = s.StudentId
         LEFT JOIN TuitionPayments tp ON cs.StudentId = tp.StudentId AND cs.ClassId = tp.ClassId AND tp.Status = 'Completed'
         WHERE cs.ClassId = ?`,
-        [classId]
+        [classId],
       ),
 
       // 6. Assignments
       query(
         `SELECT * FROM Assignments WHERE ClassId = ? ORDER BY DueDate DESC`,
-        [classId]
+        [classId],
       ),
     ]);
 
@@ -601,7 +669,7 @@ export const getClassDetail = async (req, res) => {
       const lesson = lessons.find((l) => l.LessonId === d.LessonId);
       if (lesson) {
         const chapterIndex = curriculum.findIndex(
-          (c) => c.id === lesson.ChapterId
+          (c) => c.id === lesson.ChapterId,
         );
         if (chapterIndex !== -1) {
           curriculum[chapterIndex].lessons.push({
@@ -635,6 +703,229 @@ export const getClassDetail = async (req, res) => {
       Chapters: curriculum,
       Students: students,
       Assignments: assignments,
+    });
+  } catch (error) {
+    console.error("Lỗi get class detail:", error);
+    return res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+export const getClassDetailStudent = async (req, res) => {
+  const classId = req.params.classId;
+  const userId = req.query.userId;
+
+  try {
+    // --- BƯỚC 1: Kiểm tra quyền truy cập ---
+    const qCheckStudent = `
+      SELECT s.StudentId, cs.IsLocked 
+      FROM Students s
+      JOIN Class_Student cs ON s.StudentId = cs.StudentId
+      WHERE s.UserId = ? AND cs.ClassId = ?
+    `;
+    const [studentRows] = await db
+      .promise()
+      .query(qCheckStudent, [userId, classId]);
+
+    if (studentRows.length === 0) {
+      return res.status(400).json({ message: "Bạn chưa đăng ký lớp học này." });
+    }
+
+    const studentId = studentRows[0].StudentId;
+    const isLocked = studentRows[0].IsLocked;
+
+    if (isLocked) {
+      return res
+        .status(403)
+        .json({ message: "Tài khoản của bạn đã bị khóa trong lớp này." });
+    }
+
+    // --- BƯỚC 2: Lấy dữ liệu chi tiết ---
+    const [
+      classInfoData,
+      lessonsData,
+      materialsData,
+      assignmentsData,
+      quizzesData,
+      notificationsData,
+      paymentData,
+    ] = await Promise.all([
+      // =================================================================================
+      // 1. THÔNG TIN LỚP + COURSE + GIẢNG VIÊN (CHI TIẾT)
+      // =================================================================================
+      db.promise().query(
+        `SELECT 
+            c.*, 
+            -- Thông tin khóa học
+            co.CourseName, co.CourseImage, co.Subject,
+            
+            -- Thông tin Giảng viên (Chi tiết)
+            t.TeacherId,
+            t.FullName as TeacherName,
+            t.Bio as TeacherBio,       -- <--- Thêm: Giới thiệu/Tiểu sử
+            t.PhoneNo as TeacherPhone, -- <--- Thêm: SĐT liên hệ
+            u.Email as TeacherEmail,   -- <--- Thêm: Email từ bảng Users
+            u.Avatar as TeacherAvatar, -- <--- Thêm: Avatar từ bảng Users
+            
+            -- Thông tin phòng học
+            r.RoomName, r.Location
+         FROM Classes c
+         JOIN Courses co ON c.CourseId = co.CourseId
+         LEFT JOIN Teachers t ON c.TeacherId = t.TeacherId
+         LEFT JOIN Users u ON t.UserId = u.UserId -- Join để lấy Avatar và Email
+         LEFT JOIN Classrooms r ON c.RoomId = r.RoomId
+         WHERE c.ClassId = ?`,
+        [classId],
+      ),
+
+      // 2. Lessons + Chapter Info
+      db.promise().query(
+        `SELECT 
+            l.*, 
+            cc.Title as ChapterTitle,
+            cc.Description as ChapterDesc,
+            cc.OrderIndex as ChapterOrder,
+            IF(slp.IsCompleted = 1, 1, 0) as IsCompleted
+         FROM Lessons l
+         LEFT JOIN CourseChapters cc ON l.ChapterId = cc.CourseChapterId
+         LEFT JOIN Student_Lesson_Progress slp 
+            ON l.LessonId = slp.LessonId AND slp.StudentId = ?
+         WHERE l.ClassId = ? 
+         ORDER BY cc.OrderIndex ASC, l.OrderIndex ASC`,
+        [studentId, classId],
+      ),
+
+      // 3. LessonMaterials
+      db.promise().query(
+        `SELECT lm.* FROM LessonMaterials lm
+         JOIN Lessons l ON lm.LessonId = l.LessonId
+         WHERE l.ClassId = ?`,
+        [classId],
+      ),
+
+      // 4. Assignments
+      db.promise().query(
+        `SELECT a.*, 
+                s.Status as SubmissionStatus, 
+                s.Score as StudentScore,
+                s.SubmissionDate,
+                s.TeacherComment
+         FROM Assignments a
+         LEFT JOIN Submissions s 
+            ON a.AssignmentId = s.AssignmentId AND s.StudentId = ?
+         WHERE a.ClassId = ? 
+         ORDER BY a.DueDate DESC`,
+        [studentId, classId],
+      ),
+
+      // 5. Quizzes
+      db.promise().query(
+        `SELECT q.QuizId, q.Title, q.DurationMinutes, q.StartTime, q.EndTime, q.Status,
+                qr.Score as StudentScore, qr.CorrectCount, qr.TotalQuestions, qr.CompletedAt
+         FROM Quizzes q
+         LEFT JOIN QuizResults qr 
+            ON q.QuizId = qr.QuizId AND qr.StudentId = ?
+         WHERE q.ClassId = ?
+         ORDER BY q.StartTime DESC`,
+        [studentId, classId],
+      ),
+
+      // 6. Notifications (10 tin mới nhất)
+      db.promise().query(
+        `SELECT NotiId, Title, Message, Type, IsRead, CreatedAt 
+         FROM Notifications 
+         WHERE UserId = ? 
+         ORDER BY CreatedAt DESC 
+         LIMIT 10`,
+        [userId],
+      ),
+
+      // 7. Payment Status
+      db.promise().query(
+        `SELECT Status FROM TuitionPayments 
+         WHERE ClassId = ? AND StudentId = ? AND Status = 'Completed'`,
+        [classId, studentId],
+      ),
+    ]);
+
+    // --- BƯỚC 3: Xử lý dữ liệu trả về ---
+    const classInfo = classInfoData[0][0];
+    if (!classInfo)
+      return res.status(404).json({ message: "Lớp không tồn tại" });
+
+    const lessonsRaw = lessonsData[0];
+    const materials = materialsData[0];
+    const assignments = assignmentsData[0];
+    const quizzes = quizzesData[0];
+    const notifications = notificationsData[0];
+    const isPaid = paymentData[0].length > 0;
+
+    // --- LOGIC NHÓM BÀI HỌC THEO CHƯƠNG ---
+    const curriculumMap = new Map();
+
+    lessonsRaw.forEach((lesson) => {
+      const chId = lesson.ChapterId || "uncategorized";
+      const chTitle = lesson.ChapterTitle || "Bài học chung";
+      const chDesc = lesson.ChapterDesc || "";
+
+      if (!curriculumMap.has(chId)) {
+        curriculumMap.set(chId, {
+          ChapterId: lesson.ChapterId,
+          Title: chTitle,
+          Description: chDesc,
+          lessons: [],
+        });
+      }
+
+      const lessonDocs = materials.filter(
+        (m) => m.LessonId === lesson.LessonId,
+      );
+
+      curriculumMap.get(chId).lessons.push({
+        LessonId: lesson.LessonId,
+        Title: lesson.Title,
+        Description: lesson.Description,
+        Type: lesson.VideoUrl ? "video" : "document",
+        VideoUrl: lesson.VideoUrl,
+        Duration: "00:00",
+        IsCompleted: lesson.IsCompleted === 1,
+        Materials: lessonDocs,
+      });
+    });
+
+    const curriculum = Array.from(curriculumMap.values());
+
+    // --- TÍNH TOÁN TIẾN ĐỘ ---
+    const totalLessons = lessonsRaw.length;
+    const completedLessons = lessonsRaw.filter(
+      (l) => l.IsCompleted === 1,
+    ).length;
+    const learningProgress =
+      totalLessons > 0
+        ? Math.round((completedLessons / totalLessons) * 100)
+        : 0;
+
+    const today = new Date();
+    const start = new Date(classInfo.StartDate);
+    const end = new Date(classInfo.EndDate);
+    let timeProgress = 0;
+
+    if (classInfo.StartDate && classInfo.EndDate) {
+      if (today > end) timeProgress = 100;
+      else if (today > start)
+        timeProgress = Math.floor(((today - start) / (end - start)) * 100);
+    }
+
+    // --- TRẢ VỀ KẾT QUẢ ---
+    return res.status(200).json({
+      ...classInfo, // Sẽ tự động bao gồm: TeacherBio, TeacherPhone, TeacherEmail, TeacherAvatar
+      IsPaid: isPaid,
+      LearningProgress: learningProgress,
+      TimeProgress: timeProgress,
+      LessonCount: totalLessons,
+      Chapters: curriculum,
+      Assignments: assignments,
+      Quizzes: quizzes,
+      Notifications: notifications,
     });
   } catch (error) {
     console.error("Lỗi get class detail:", error);
@@ -739,11 +1030,65 @@ export const getTeacherScheduleByWeek = async (req, res) => {
   }
 };
 
+export const getStudentScheduleByWeek = async (req, res) => {
+  try {
+    // 1. Lấy studentId thay vì teacherId
+    let { studentId, startDate, endDate } = req.query;
+
+    // 2. Validate dữ liệu đầu vào
+    if (!studentId || !startDate || !endDate) {
+      return res
+        .status(400)
+        .json({
+          message: "Thiếu thông tin (studentId, ngày bắt đầu, ngày kết thúc).",
+        });
+    }
+    let q = `
+      SELECT 
+        c.ClassId, 
+        c.ClassName, 
+        c.Days, 
+        c.StartTime, 
+        c.EndTime,
+        c.StartDate as ClassStartDate, 
+        c.EndDate as ClassEndDate,
+        t.FullName as TeacherName, 
+        r.RoomName,
+        r.Location,
+        co.CourseName,
+        co.CourseImage
+      FROM Classes c
+      JOIN Class_Student cs ON c.ClassId = cs.ClassId
+      JOIN Courses co ON c.CourseId = co.CourseId
+      LEFT JOIN Teachers t ON c.TeacherId = t.TeacherId
+      LEFT JOIN Classrooms r ON c.RoomId = r.RoomId
+      WHERE 
+        cs.StudentId = ? 
+        AND c.StartDate <= ? 
+        AND c.EndDate >= ?
+        AND cs.IsLocked = 0
+        AND c.Status = 'Active'
+      ORDER BY c.StartTime ASC
+    `;
+
+    // 4. Thực thi Query
+    // Thứ tự tham số phải khớp với dấu ? trong câu lệnh SQL
+    const queryParams = [studentId, endDate, startDate];
+
+    const data = await query(q, queryParams);
+
+    return res.status(200).json(data);
+  } catch (error) {
+    console.error("Lỗi lấy lịch học sinh:", error);
+    return res.status(500).json({ message: "Lỗi server", error });
+  }
+};
+
 // --- 17. API HỖ TRỢ XẾP LỊCH ---
 export const getActiveRooms = async (req, res) => {
   try {
     const rooms = await queryAsync(
-      "SELECT RoomId, RoomName, Capacity FROM Classrooms WHERE Status = 'Active'"
+      "SELECT RoomId, RoomName, Capacity FROM Classrooms WHERE Status = 'Active'",
     );
     return res.status(200).json(rooms);
   } catch (err) {
@@ -754,7 +1099,7 @@ export const getActiveRooms = async (req, res) => {
 export const getRooms = async (req, res) => {
   try {
     const rooms = await queryAsync(
-      "SELECT RoomId, RoomName, Capacity FROM Classrooms"
+      "SELECT RoomId, RoomName, Capacity FROM Classrooms",
     );
     return res.status(200).json(rooms);
   } catch (err) {
@@ -772,7 +1117,7 @@ export const checkScheduleAvailability = async (req, res) => {
     const [allTeachers, allRooms] = await Promise.all([
       queryAsync("SELECT TeacherId, FullName, TeacherCode FROM Teachers"),
       queryAsync(
-        "SELECT RoomId, RoomName, Capacity FROM Classrooms WHERE Status = 'Active'"
+        "SELECT RoomId, RoomName, Capacity FROM Classrooms WHERE Status = 'Active'",
       ),
     ]);
 
@@ -814,18 +1159,28 @@ export const checkScheduleAvailability = async (req, res) => {
 };
 
 export const getStudentClasses = async (req, res) => {
-  // Giả sử middleware verifyToken đã gán req.user
-  // Nếu req.user chỉ có userId, bạn cần query để lấy StudentId trước,
-  // hoặc nếu req.user đã có studentId (như hướng dẫn fix trước đó) thì dùng luôn.
+  const userId = req.params.userId;
 
-  const studentId = req.params.studentId;
-
-  if (!studentId) {
-    return res.status(400).json("Không tìm thấy thông tin sinh viên.");
+  if (!userId) {
+    return res.status(400).json("Thiếu thông tin UserId.");
   }
 
   try {
-    const q = `
+    // --- BƯỚC 1: Lấy StudentId từ UserId ---
+    const qGetStudent = "SELECT StudentId FROM Students WHERE UserId = ?";
+    const [studentRows] = await db.promise().query(qGetStudent, [userId]);
+
+    // Nếu không tìm thấy dòng nào -> Tài khoản này chưa là Học sinh
+    if (studentRows.length === 0) {
+      return res
+        .status(404)
+        .json("Không tìm thấy hồ sơ học sinh liên kết với tài khoản này.");
+    }
+
+    const studentId = studentRows[0].StudentId;
+
+    // --- BƯỚC 2: Lấy danh sách lớp theo StudentId ---
+    const qGetClasses = `
       SELECT 
         c.ClassId,
         c.ClassName,
@@ -833,22 +1188,38 @@ export const getStudentClasses = async (req, res) => {
         c.StartTime,
         c.EndTime,
         c.Status,
+        c.StartDate,
+        c.EndDate,
+        c.TuitionFee,
+        
+        -- Thông tin khóa học
         co.CourseName,
+        co.Subject,
+        
+        -- Thông tin giáo viên
         t.FullName AS TeacherName,
-        r.RoomName
+        
+        -- Thông tin phòng học
+        r.RoomName,
+        r.Location AS RoomLocation,
+
+        -- Thông tin đăng ký (ngày đăng ký)
+        cs.EnrollmentDate
       FROM Classes c
       JOIN Class_Student cs ON c.ClassId = cs.ClassId
       JOIN Courses co ON c.CourseId = co.CourseId
       LEFT JOIN Teachers t ON c.TeacherId = t.TeacherId
       LEFT JOIN Classrooms r ON c.RoomId = r.RoomId
-      WHERE cs.StudentId = ?
-      ORDER BY c.Status ASC, c.StartTime ASC
+      
+      WHERE cs.StudentId = ? 
+      ORDER BY c.Status ASC, c.StartDate DESC
     `;
 
-    const [rows] = await db.promise().query(q, [studentId]);
+    const [rows] = await db.promise().query(qGetClasses, [studentId]);
+
     return res.status(200).json(rows);
   } catch (err) {
-    console.error(err);
+    console.error("Lỗi lấy lớp của sinh viên:", err);
     return res.status(500).json(err);
   }
 };
@@ -891,34 +1262,67 @@ export const getAvailableClasses = async (req, res) => {
 
 // --- Đăng ký lớp học ---
 export const registerClass = async (req, res) => {
-  const studentId = req.user.studentId;
-  const { classId } = req.body;
+  // 1. Lấy classId và userId từ request body
+  const { classId, userId } = req.body;
 
-  if (!classId) return res.status(400).json("Thiếu ClassId");
+  if (!classId || !userId) {
+    return res.status(400).json("Thiếu thông tin ClassId hoặc UserId");
+  }
 
   try {
-    // Check lớp tồn tại và sĩ số
-    const qCheck = `
-        SELECT MaxStudents, 
-        (SELECT COUNT(*) FROM Class_Student WHERE ClassId = ?) as Enrolled 
-        FROM Classes WHERE ClassId = ?
-    `;
-    const [classInfo] = await db.promise().query(qCheck, [classId, classId]);
+    // 2. LẤY STUDENT ID TỪ USER ID
+    // Cần bước này vì bảng Class_Student lưu StudentId chứ không phải UserId
+    const qGetStudent = "SELECT StudentId FROM Students WHERE UserId = ?";
+    const [studentRows] = await db.promise().query(qGetStudent, [userId]);
 
-    if (classInfo.length === 0)
-      return res.status(404).json("Lớp không tồn tại");
-    if (classInfo[0].Enrolled >= classInfo[0].MaxStudents) {
+    if (studentRows.length === 0) {
+      return res.status(403).json("Người dùng này chưa có hồ sơ học sinh.");
+    }
+
+    const studentId = studentRows[0].StudentId;
+
+    // 3. CHECK LỚP TỒN TẠI & SĨ SỐ
+    const qCheckClass = `
+        SELECT 
+            MaxStudents, 
+            Status,
+            (SELECT COUNT(*) FROM Class_Student WHERE ClassId = ?) as Enrolled 
+        FROM Classes 
+        WHERE ClassId = ?
+    `;
+    const [classInfo] = await db
+      .promise()
+      .query(qCheckClass, [classId, classId]);
+
+    if (classInfo.length === 0) {
+      return res.status(404).json("Lớp học không tồn tại");
+    }
+
+    const currentClass = classInfo[0];
+
+    // Kiểm tra sĩ số
+    if (currentClass.Enrolled >= currentClass.MaxStudents) {
       return res.status(400).json("Lớp đã đủ sĩ số");
     }
 
-    // Check đã đăng ký chưa
+    // (Tùy chọn) Kiểm tra trạng thái lớp có cho phép đăng ký không
+    if (
+      currentClass.Status !== "Recruiting" &&
+      currentClass.Status !== "Upcoming"
+    ) {
+      return res.status(400).json("Lớp học không trong thời gian tuyển sinh");
+    }
+
+    // 4. CHECK ĐÃ ĐĂNG KÝ CHƯA
     const qExist =
       "SELECT * FROM Class_Student WHERE ClassId = ? AND StudentId = ?";
     const [exist] = await db.promise().query(qExist, [classId, studentId]);
-    if (exist.length > 0)
-      return res.status(400).json("Bạn đã đăng ký lớp này rồi");
 
-    // Insert
+    if (exist.length > 0) {
+      return res.status(400).json("Bạn đã đăng ký lớp này rồi");
+    }
+
+    // 5. INSERT VÀO BẢNG CLASS_STUDENT
     const qInsert =
       "INSERT INTO Class_Student (ClassId, StudentId) VALUES (?, ?)";
     await db.promise().query(qInsert, [classId, studentId]);

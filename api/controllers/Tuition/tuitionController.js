@@ -1,8 +1,13 @@
 import { db } from "../../db.js";
-import util from "util";
 
-// Chuyển đổi callback sang promise để dùng async/await
-const queryAsync = util.promisify(db.query).bind(db);
+// ==================================================================
+// HÀM WRAPPER: Chuyển đổi callback sang Promise chuẩn
+// ==================================================================
+const query = (sql, params) => {
+  return new Promise((resolve, reject) => {
+    db.query(sql, params, (err, res) => (err ? reject(err) : resolve(res)));
+  });
+};
 
 // ==================================================================
 // HÀM PHỤ TRỢ: Tự động tính toán và cập nhật trạng thái IsPaid
@@ -10,25 +15,25 @@ const queryAsync = util.promisify(db.query).bind(db);
 const syncPaymentStatus = async (classId, studentId) => {
   try {
     // 1. Lấy mức học phí chuẩn của lớp (TuitionFee)
-    const [classInfo] = await queryAsync(
+    const classInfo = await query(
       "SELECT TuitionFee FROM Classes WHERE ClassId = ?",
-      [classId]
+      [classId],
     );
 
     // Nếu không tìm thấy lớp, dừng lại
-    if (!classInfo) return;
+    if (!classInfo || classInfo.length === 0) return;
 
-    const requiredFee = parseFloat(classInfo.TuitionFee) || 0;
+    const requiredFee = parseFloat(classInfo[0].TuitionFee) || 0;
 
     // 2. Tính tổng số tiền học viên ĐÃ ĐÓNG (Chỉ tính trạng thái 'Completed')
-    const [paymentSum] = await queryAsync(
+    const paymentSum = await query(
       `SELECT SUM(Amount) as TotalPaid 
        FROM TuitionPayments 
        WHERE ClassId = ? AND StudentId = ? AND Status = 'Completed'`,
-      [classId, studentId]
+      [classId, studentId],
     );
 
-    const totalPaid = parseFloat(paymentSum.TotalPaid) || 0;
+    const totalPaid = parseFloat(paymentSum[0].TotalPaid) || 0;
 
     // 3. Logic so sánh:
     // - Nếu học phí <= 0 (Lớp miễn phí) -> Coi như đã đóng (IsPaid = 1)
@@ -42,14 +47,14 @@ const syncPaymentStatus = async (classId, studentId) => {
     }
 
     // 4. Update trạng thái vào bảng Class_Student
-    await queryAsync(
+    await query(
       "UPDATE Class_Student SET IsPaid = ? WHERE ClassId = ? AND StudentId = ?",
-      [isPaid, classId, studentId]
+      [isPaid, classId, studentId],
     );
 
     // Log ra console để debug (có thể xóa khi chạy production)
     console.log(
-      `[Sync Payment] Class: ${classId}, Student: ${studentId} | Fee: ${requiredFee}, Paid: ${totalPaid} -> IsPaid: ${isPaid}`
+      `[Sync Payment] Class: ${classId}, Student: ${studentId} | Fee: ${requiredFee}, Paid: ${totalPaid} -> IsPaid: ${isPaid}`,
     );
   } catch (error) {
     console.error("Lỗi khi đồng bộ trạng thái IsPaid:", error);
@@ -57,6 +62,11 @@ const syncPaymentStatus = async (classId, studentId) => {
   }
 };
 
+// ==================================================================
+// API HANDLERS
+// ==================================================================
+
+// 1. Lấy danh sách công nợ (GET /api/tuition/debts)
 export const getTuitionDebts = async (req, res) => {
   try {
     // SQL Logic:
@@ -88,9 +98,13 @@ export const getTuitionDebts = async (req, res) => {
 
     // Tính thêm phần trăm (%) để Frontend vẽ thanh tiến độ
     const processedData = data.map((item) => {
+      const fee = parseFloat(item.TuitionFee) || 0;
+      const paid = parseFloat(item.TotalPaid) || 0;
+      const remaining = parseFloat(item.Remaining) || 0;
+
       let percent = 0;
-      if (item.TuitionFee > 0) {
-        percent = Math.round((item.TotalPaid / item.TuitionFee) * 100);
+      if (fee > 0) {
+        percent = Math.round((paid / fee) * 100);
       } else {
         percent = 100; // Học phí = 0 thì coi như xong
       }
@@ -98,8 +112,8 @@ export const getTuitionDebts = async (req, res) => {
       return {
         ...item,
         Percent: percent > 100 ? 100 : percent,
-        OverPaid: item.Remaining < 0 ? Math.abs(item.Remaining) : 0, // Nếu đóng thừa
-        Remaining: item.Remaining > 0 ? item.Remaining : 0, // Không lấy số âm
+        OverPaid: remaining < 0 ? Math.abs(remaining) : 0, // Nếu đóng thừa
+        Remaining: remaining > 0 ? remaining : 0, // Không lấy số âm cho phần còn lại
       };
     });
 
@@ -110,14 +124,10 @@ export const getTuitionDebts = async (req, res) => {
   }
 };
 
-// ==================================================================
-// API HANDLERS
-// ==================================================================
-
-// 1. Lấy danh sách phiếu thu (GET /api/tuition/all)
+// 2. Lấy danh sách phiếu thu (GET /api/tuition/all)
 export const getAllPayments = async (req, res) => {
   try {
-    const query = `
+    const sql = `
       SELECT 
         tp.PaymentId, 
         tp.StudentId, 
@@ -136,7 +146,7 @@ export const getAllPayments = async (req, res) => {
       ORDER BY tp.PaymentDate DESC
     `;
 
-    const results = await queryAsync(query);
+    const results = await query(sql);
     return res.status(200).json(results);
   } catch (err) {
     console.error(err);
@@ -144,7 +154,7 @@ export const getAllPayments = async (req, res) => {
   }
 };
 
-// 2. Tạo phiếu thu mới (POST /api/tuition/create)
+// 3. Tạo phiếu thu mới (POST /api/tuition/create)
 export const createPayment = async (req, res) => {
   try {
     const { ClassId, StudentId, Amount, Status, Note } = req.body;
@@ -159,12 +169,12 @@ export const createPayment = async (req, res) => {
     // Mặc định Status là Completed nếu không gửi lên
     const finalStatus = Status || "Completed";
 
-    const query = `
+    const sql = `
       INSERT INTO TuitionPayments (ClassId, StudentId, Amount, Status, Note, PaymentDate)
       VALUES (?, ?, ?, ?, ?, NOW())
     `;
 
-    await queryAsync(query, [ClassId, StudentId, Amount, finalStatus, Note]);
+    await query(sql, [ClassId, StudentId, Amount, finalStatus, Note]);
 
     // QUAN TRỌNG: Gọi hàm đồng bộ để cập nhật IsPaid bên bảng Class_Student
     await syncPaymentStatus(ClassId, StudentId);
@@ -176,7 +186,7 @@ export const createPayment = async (req, res) => {
   }
 };
 
-// 3. Cập nhật phiếu thu (PUT /api/tuition/:id)
+// 4. Cập nhật phiếu thu (PUT /api/tuition/:id)
 // Dùng khi Admin sửa sai số tiền hoặc ghi chú
 export const updatePayment = async (req, res) => {
   try {
@@ -184,25 +194,28 @@ export const updatePayment = async (req, res) => {
     const { Amount, Status, Note } = req.body;
 
     // Cần lấy ClassId và StudentId của phiếu này trước khi sửa
-    const [currentPayment] = await queryAsync(
+    const currentPayment = await query(
       "SELECT ClassId, StudentId FROM TuitionPayments WHERE PaymentId = ?",
-      [id]
+      [id],
     );
 
-    if (!currentPayment) {
+    if (!currentPayment || currentPayment.length === 0) {
       return res.status(404).json("Không tìm thấy phiếu thu.");
     }
 
-    const query = `
+    const sql = `
       UPDATE TuitionPayments 
       SET Amount = ?, Status = ?, Note = ?
       WHERE PaymentId = ?
     `;
 
-    await queryAsync(query, [Amount, Status, Note, id]);
+    await query(sql, [Amount, Status, Note, id]);
 
     // Đồng bộ lại trạng thái vì số tiền hoặc status đã thay đổi
-    await syncPaymentStatus(currentPayment.ClassId, currentPayment.StudentId);
+    await syncPaymentStatus(
+      currentPayment[0].ClassId,
+      currentPayment[0].StudentId,
+    );
 
     return res.status(200).json("Cập nhật phiếu thu thành công.");
   } catch (err) {
@@ -211,33 +224,126 @@ export const updatePayment = async (req, res) => {
   }
 };
 
-// 4. Cập nhật nhanh trạng thái (PUT /api/tuition/:id/status)
+// 5. Cập nhật nhanh trạng thái (PUT /api/tuition/:id/status)
 // Dùng cho nút chuyển trạng thái nhanh trên giao diện
 export const updatePaymentStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body; // 'Completed', 'Pending', 'Failed'
 
-    const [currentPayment] = await queryAsync(
+    const currentPayment = await query(
       "SELECT ClassId, StudentId FROM TuitionPayments WHERE PaymentId = ?",
-      [id]
+      [id],
     );
 
-    if (!currentPayment) {
+    if (!currentPayment || currentPayment.length === 0) {
       return res.status(404).json("Không tìm thấy phiếu thu.");
     }
 
-    await queryAsync(
-      "UPDATE TuitionPayments SET Status = ? WHERE PaymentId = ?",
-      [status, id]
-    );
+    await query("UPDATE TuitionPayments SET Status = ? WHERE PaymentId = ?", [
+      status,
+      id,
+    ]);
 
     // Đồng bộ lại trạng thái
-    await syncPaymentStatus(currentPayment.ClassId, currentPayment.StudentId);
+    await syncPaymentStatus(
+      currentPayment[0].ClassId,
+      currentPayment[0].StudentId,
+    );
 
     return res.status(200).json("Cập nhật trạng thái thành công.");
   } catch (err) {
     console.error(err);
     return res.status(500).json("Lỗi server.");
+  }
+};
+
+export const getTuitionSummary = async (req, res) => {
+  try {
+    const studentId = req.params.studentId;
+
+    if (!studentId) {
+      return res.status(401).json("Không xác thực được người dùng.");
+    }
+
+    // QUERY 1: Lấy danh sách các lớp và tính toán số tiền Còn Nợ
+    // Logic: (Học phí gốc) - (Tổng tiền đã đóng Completed) = Còn nợ
+    const sqlUnpaid = `
+      SELECT 
+        c.ClassId,
+        c.ClassName,
+        c.TuitionFee as TotalFee,
+        COALESCE(SUM(CASE WHEN tp.Status = 'Completed' THEN tp.Amount ELSE 0 END), 0) as PaidAmount,
+        (c.TuitionFee - COALESCE(SUM(CASE WHEN tp.Status = 'Completed' THEN tp.Amount ELSE 0 END), 0)) as RemainingDebt
+      FROM Class_Student cs
+      JOIN Classes c ON cs.ClassId = c.ClassId
+      LEFT JOIN TuitionPayments tp ON c.ClassId = tp.ClassId AND tp.StudentId = cs.StudentId
+      WHERE cs.StudentId = ?
+      GROUP BY c.ClassId, c.ClassName, c.TuitionFee
+      HAVING RemainingDebt > 0
+    `;
+
+    const unpaidClasses = await query(sqlUnpaid, [studentId]);
+
+    // QUERY 2: Tính tổng số tiền đã đóng từ trước đến nay (để hiển thị thống kê)
+    const sqlTotalPaid = `
+      SELECT COALESCE(SUM(Amount), 0) as TotalPaid
+      FROM TuitionPayments 
+      WHERE StudentId = ? AND Status = 'Completed'
+    `;
+    const [paidResult] = await query(sqlTotalPaid, [studentId]);
+
+    // Tính tổng nợ từ danh sách các lớp nợ
+    const totalDebt = unpaidClasses.reduce(
+      (acc, curr) => acc + parseFloat(curr.RemainingDebt),
+      0,
+    );
+
+    return res.status(200).json({
+      totalPaid: parseFloat(paidResult.TotalPaid),
+      totalDebt: totalDebt,
+      unpaidClasses: unpaidClasses, // Danh sách chi tiết các lớp đang nợ để frontend vẽ nút "Thanh toán"
+    });
+  } catch (err) {
+    console.error("Lỗi getTuitionSummary:", err);
+    return res
+      .status(500)
+      .json({ message: "Lỗi lấy thông tin tổng hợp học phí", error: err });
+  }
+};
+
+// 7. Lấy lịch sử giao dịch (GET /api/tuition/history)
+export const getPaymentHistory = async (req, res) => {
+  try {
+    const studentId = req.params.studentId;
+
+    if (!studentId) {
+      return res.status(401).json("Không xác thực được người dùng.");
+    }
+
+    const sql = `
+      SELECT 
+        tp.PaymentId,
+        tp.Amount,
+        tp.PaymentDate,
+        tp.Status,
+        tp.Note,
+        c.ClassName,
+        co.CourseName
+      FROM TuitionPayments tp
+      LEFT JOIN Classes c ON tp.ClassId = c.ClassId
+      LEFT JOIN Courses co ON c.CourseId = co.CourseId
+      WHERE tp.StudentId = ?
+      ORDER BY tp.PaymentDate DESC
+    `;
+
+    const data = await query(sql, [studentId]);
+
+    return res.status(200).json(data);
+  } catch (err) {
+    console.error("Lỗi getPaymentHistory:", err);
+    return res
+      .status(500)
+      .json({ message: "Lỗi lấy lịch sử giao dịch", error: err });
   }
 };

@@ -315,44 +315,21 @@ export const getAvailableCourses = async (req, res) => {
         co.CourseImage, 
         co.BaseTuitionFee, 
         co.Description,
-        COUNT(c.ClassId) as OpenClassesCount,
-        CAST(
-          CONCAT(
-            '[', 
-            IFNULL(
-              GROUP_CONCAT(
-                DISTINCT JSON_OBJECT(
-                  'FullName', t.FullName, 
-                  'Avatar', u.Avatar
-                )
-              ), 
-              ''
-            ), 
-            ']'
-          ) AS JSON
-        ) as Teachers
+        -- Đếm số lớp có trạng thái KHÁC 'Finished' (bao gồm Active, Upcoming, Recruiting...)
+        COUNT(c.ClassId) as OpenClassesCount
       FROM Courses co
-      JOIN Classes c ON co.CourseId = c.CourseId
-      LEFT JOIN Teachers t ON c.TeacherId = t.TeacherId
-      LEFT JOIN Users u ON t.UserId = u.UserId -- Join thêm bảng Users để lấy Avatar
-      WHERE c.Status IN ('Recruiting', 'Upcoming')
+      -- Sử dụng LEFT JOIN để lấy cả những khóa học chưa có lớp nào (sẽ trả về 0)
+      -- Điều kiện Status != 'Finished' được đặt ngay trong ON để lọc trước khi đếm
+      LEFT JOIN Classes c ON co.CourseId = c.CourseId AND c.Status != 'Finished'
       GROUP BY co.CourseId
     `;
 
     const [rows] = await db.promise().query(q);
 
-    // Xử lý dữ liệu trả về
-    const courses = rows.map((row) => ({
-      ...row,
-      Teachers:
-        typeof row.Teachers === "string"
-          ? JSON.parse(row.Teachers)
-          : row.Teachers,
-    }));
-
-    res.status(200).json(courses);
+    // Vì không còn cột JSON giáo viên, ta có thể trả thẳng rows về client
+    res.status(200).json(rows);
   } catch (err) {
-    console.error(err);
+    console.error("Error fetching courses:", err);
     res.status(500).json(err);
   }
 };
@@ -390,6 +367,45 @@ export const getClassesByCourseId = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json(err);
+  }
+};
+
+export const getChaptersByClassId = async (req, res) => {
+  const { classId } = req.params;
+
+  try {
+    // Câu lệnh SQL:
+    // 1. Lấy thông tin chương từ bảng CourseChapters
+    // 2. Điều kiện: ClassId khớp với tham số truyền vào
+    // 3. Sub-query: Đếm số lượng bài học (Lessons) trong chương đó
+    // 4. Sắp xếp theo OrderIndex
+    const sql = `
+      SELECT 
+        cc.CourseChapterId,
+        cc.Title, 
+        cc.Description, 
+        cc.OrderIndex,
+        cc.ClassId,
+        (SELECT COUNT(*) FROM Lessons l WHERE l.ChapterId = cc.CourseChapterId) as LessonCount
+      FROM CourseChapters cc
+      WHERE cc.ClassId = ?
+      ORDER BY cc.OrderIndex ASC
+    `;
+
+    // Sử dụng helper query thay vì db.promise().query
+    const rows = await query(sql, [classId]);
+
+    // Trả về kết quả
+    // Lưu ý: Helper 'query' của bạn trả về trực tiếp 'res' (mảng rows), 
+    // không phải [rows, fields] như db.promise().query
+    return res.status(200).json(rows);
+
+  } catch (err) {
+    console.error("Lỗi lấy danh sách chapter của lớp:", err);
+    return res.status(500).json({ 
+      message: "Lỗi server khi tải chương trình học.", 
+      error: err.message 
+    });
   }
 };
 // --- 9. XEM THỜI KHÓA BIỂU CỦA HỌC SINH (Student Schedule) ---

@@ -276,14 +276,16 @@ CREATE TABLE
     Submissions (
         SubmissionId INT AUTO_INCREMENT PRIMARY KEY,
         AssignmentId INT,
-        StudentId INT,
+        Anser StudentId INT,
+        ResultId INT NULL,
         SubmissionDate DATETIME DEFAULT CURRENT_TIMESTAMP,
         Score FLOAT,
         TeacherComment TEXT,
         Status ENUM ('Submitted', 'Late', 'Graded') DEFAULT 'Submitted',
         FileUrl VARCHAR(500), -- Link file bài làm
         FOREIGN KEY (AssignmentId) REFERENCES Assignments (AssignmentId) ON DELETE CASCADE,
-        FOREIGN KEY (StudentId) REFERENCES Students (StudentId) ON DELETE CASCADE
+        FOREIGN KEY (StudentId) REFERENCES Students (StudentId) ON DELETE CASCADE,
+        FOREIGN KEY (ResultId) REFERENCES QuizResults (ResultId) ON DELETE SET NULL
     );
 
 -- BẢNG QUAN TRỌNG: Lưu chi tiết bài làm
@@ -337,3 +339,6 @@ CREATE TABLE
         CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (UserId) REFERENCES Users (UserId) ON DELETE CASCADE
     );
+
+ALTER TABLE Assignments
+ADD COLUMN FileUrl VARCHAR(500) NULL

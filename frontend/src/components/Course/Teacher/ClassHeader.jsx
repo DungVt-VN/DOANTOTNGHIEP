@@ -82,11 +82,6 @@ const ClassHeader = ({
         {/* Actions */}
         <div className="flex items-center gap-3 shrink-0">
           <RefreshButton onClick={onRefresh} loading={loading} />
-
-          <button className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl text-sm font-semibold hover:bg-slate-50 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm active:scale-95">
-            <Settings size={18} />
-            <span className="hidden md:inline">Cài đặt</span>
-          </button>
         </div>
       </div>
 
@@ -116,7 +111,7 @@ const ClassHeader = ({
           />
           <TabItem
             id="assignments"
-            label="Bài tập & Kiểm tra"
+            label="Bài tập"
             icon={<FileText />}
             activeTab={activeTab}
             setActiveTab={setActiveTab}

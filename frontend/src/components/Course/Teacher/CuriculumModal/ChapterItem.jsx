@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import {
-  Plus,
   Edit,
   Trash2,
   ChevronDown,
@@ -10,20 +9,20 @@ import {
   FileSpreadsheet,
   File,
   FileQuestion,
-  Paperclip,
   MoreVertical,
   MonitorPlay,
-  CheckCircle2,
-  BookOpen,
   Video,
   Download,
   X,
-  AlertCircle,
   FolderOpen,
+  Plus,
+  Book, // Icon cho section Tài liệu
+  PenTool, // Icon cho section Bài tập
 } from "lucide-react";
-import { Dropdown, Button, Tooltip, Tag, Modal } from "antd";
+import { Dropdown, Button, Tooltip, Tag, Modal, Divider } from "antd";
 
-// --- HELPER: CHECK LINK YOUTUBE ---
+// ... (Giữ nguyên các Helper functions: getYoutubeId, getFileConfig, AttachmentChip) ...
+
 const getYoutubeId = (url) => {
   if (!url) return null;
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
@@ -31,7 +30,6 @@ const getYoutubeId = (url) => {
   return match && match[2].length === 11 ? match[2] : null;
 };
 
-// --- HELPER: GET FILE CONFIG ---
 const getFileConfig = (fileName) => {
   if (!fileName)
     return { icon: File, color: "text-slate-500", bg: "bg-slate-100" };
@@ -51,7 +49,6 @@ const getFileConfig = (fileName) => {
   return { icon: File, color: "text-slate-500", bg: "bg-slate-100" };
 };
 
-// --- SUB-COMPONENT: Attachment Chip ---
 const AttachmentChip = ({ file, type, onPreview }) => {
   const { icon: Icon, color, bg } = getFileConfig(file.Title);
   const isExercise = type === "exercise";
@@ -61,19 +58,21 @@ const AttachmentChip = ({ file, type, onPreview }) => {
         e.stopPropagation();
         onPreview(file);
       }}
-      className={`group flex items-center gap-2 px-3 py-1.5 rounded-lg border shadow-sm transition-all cursor-pointer select-none
+      className={`group flex items-center gap-2 px-3 py-2 rounded-lg border shadow-sm transition-all cursor-pointer select-none bg-white
         ${
           isExercise
-            ? "bg-orange-50 border-orange-100 text-orange-700 hover:border-orange-300"
-            : "bg-slate-50 border-slate-200 text-slate-600 hover:border-blue-300"
+            ? "border-orange-100 text-slate-700 hover:border-orange-300 hover:shadow-md"
+            : "border-slate-200 text-slate-700 hover:border-blue-300 hover:shadow-md"
         }`}
     >
-      {isExercise ? (
-        <FileQuestion size={14} />
-      ) : (
-        <Icon size={14} className={isExercise ? "" : color} />
-      )}
-      <span className="truncate max-w-[150px] text-xs font-medium">
+      <div className={`p-1.5 rounded-md ${isExercise ? "bg-orange-50" : bg}`}>
+        {isExercise ? (
+          <FileQuestion size={14} className="text-orange-600" />
+        ) : (
+          <Icon size={14} className={color} />
+        )}
+      </div>
+      <span className="truncate max-w-[180px] text-xs font-medium">
         {file.Title}
       </span>
     </div>
@@ -86,7 +85,7 @@ const ChapterItem = ({
   index,
   onAddLesson,
   onDeleteChapter,
-  onEditChapter, // Nhận prop này từ cha để sửa chương
+  onEditChapter,
   onDeleteLesson,
   onEditLesson,
 }) => {
@@ -129,28 +128,7 @@ const ChapterItem = ({
     },
   ];
 
-  const addMenuItems = [
-    {
-      key: "1",
-      label: "Tạo bài mới",
-      icon: <Plus size={14} />,
-      onClick: ({ domEvent }) => {
-        domEvent.stopPropagation();
-        onAddLesson(chapter.CourseChapterId, "create");
-      },
-    },
-    {
-      key: "2",
-      label: "Nhập từ kho",
-      icon: <Download size={14} />,
-      onClick: ({ domEvent }) => {
-        domEvent.stopPropagation();
-        onAddLesson(chapter.CourseChapterId, "import");
-      },
-    },
-  ];
-
-  // --- RENDER FILE PREVIEW ---
+  // ... (Giữ nguyên renderFileContent và renderPreviewTitleIcon) ...
   const renderFileContent = (file) => {
     if (!file?.FileUrl) return null;
     const ext = (file.Title || "").split(".").pop().toLowerCase();
@@ -198,7 +176,7 @@ const ChapterItem = ({
     <>
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 mb-6 overflow-hidden group/chapter">
         {/* ========================================================= */}
-        {/* 1. CHAPTER HEADER - CẬP NHẬT LOGIC & CSS TRUNCATE         */}
+        {/* 1. CHAPTER HEADER */}
         {/* ========================================================= */}
         <div
           className={`
@@ -231,7 +209,6 @@ const ChapterItem = ({
                 </h3>
               </div>
 
-              {/* Description: Dùng class truncate để cắt ngắn dòng */}
               {chapter.Description && (
                 <p className="text-sm text-slate-500 pl-1 font-medium opacity-80 truncate block">
                   {chapter.Description}
@@ -247,7 +224,6 @@ const ChapterItem = ({
               {chapter.Lessons ? chapter.Lessons.length : 0} bài học
             </div>
 
-            {/* Action Buttons: Gắn hàm onEditChapter và onDeleteChapter */}
             <div
               className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover/chapter:opacity-100 transition-opacity"
               onClick={(e) => e.stopPropagation()}
@@ -284,7 +260,7 @@ const ChapterItem = ({
           </div>
         </div>
 
-        {/* 2. LESSON LIST (GIỮ NGUYÊN) */}
+        {/* 2. LESSON LIST */}
         <div
           className={`transition-all duration-500 ease-in-out ${
             isExpanded
@@ -385,34 +361,59 @@ const ChapterItem = ({
                       </div>
 
                       <div className="mt-auto">
+                        {/* --- PHẦN HIỂN THỊ TÀI LIỆU & BÀI TẬP ĐÃ CHỈNH SỬA --- */}
                         {(hasDocuments || hasExercises) && (
-                          <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 space-y-3 mt-1">
+                          <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 mt-2 flex flex-col gap-4">
+                            {/* Section: Tài liệu */}
                             {hasDocuments && (
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                {lesson.Documents.map((doc, i) => (
-                                  <AttachmentChip
-                                    key={doc.LessonMaterialId || i}
-                                    file={doc}
-                                    type="document"
-                                    onPreview={handlePreviewFile}
-                                  />
-                                ))}
+                              <div>
+                                <div className="flex items-center gap-2 mb-2 text-xs font-bold text-slate-500 uppercase tracking-wide">
+                                  <Book size={14} className="text-blue-500" />
+                                  Tài liệu đính kèm
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {lesson.Documents.map((doc, i) => (
+                                    <AttachmentChip
+                                      key={doc.LessonMaterialId || i}
+                                      file={doc}
+                                      type="document"
+                                      onPreview={handlePreviewFile}
+                                    />
+                                  ))}
+                                </div>
                               </div>
                             )}
+
+                            {/* Divider nếu có cả hai */}
+                            {hasDocuments && hasExercises && (
+                              <div className="border-t border-slate-200 border-dashed" />
+                            )}
+
+                            {/* Section: Bài tập */}
                             {hasExercises && (
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                {lesson.Exercises.map((ex, i) => (
-                                  <AttachmentChip
-                                    key={ex.LessonMaterialId || i}
-                                    file={ex}
-                                    type="exercise"
-                                    onPreview={handlePreviewFile}
+                              <div>
+                                <div className="flex items-center gap-2 mb-2 text-xs font-bold text-slate-500 uppercase tracking-wide">
+                                  <PenTool
+                                    size={14}
+                                    className="text-orange-500"
                                   />
-                                ))}
+                                  Bài tập thực hành
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {lesson.Exercises.map((ex, i) => (
+                                    <AttachmentChip
+                                      key={ex.LessonMaterialId || i}
+                                      file={ex}
+                                      type="exercise"
+                                      onPreview={handlePreviewFile}
+                                    />
+                                  ))}
+                                </div>
                               </div>
                             )}
                           </div>
                         )}
+
                         {isEmpty && (
                           <div className="py-2 border-t border-dashed border-slate-200 mt-2">
                             <span className="text-xs text-slate-400 italic">
@@ -433,23 +434,30 @@ const ChapterItem = ({
                 </p>
               </div>
             )}
+
+            {/* --- NÚT THÊM NỘI DUNG MỚI --- */}
             <div className="bg-slate-50/50 hover:bg-blue-50/50 transition-colors border-t border-slate-100 rounded-b-xl">
-              <Dropdown menu={{ items: addMenuItems }} trigger={["click"]}>
-                <div className="w-full py-3 flex items-center justify-center gap-2 cursor-pointer text-slate-500 hover:text-blue-600 transition-colors group">
-                  <div className="p-1 rounded-full border border-slate-300 group-hover:border-blue-400 group-hover:bg-blue-100 transition-all">
-                    <Plus size={14} />
-                  </div>
-                  <span className="text-sm font-medium">
-                    Thêm nội dung vào chương
-                  </span>
+              <div
+                onClick={() =>
+                  onAddLesson &&
+                  onAddLesson(
+                    chapter.CourseChapterId || chapter.ChapterId,
+                    "create",
+                  )
+                }
+                className="w-full py-3 flex items-center justify-center gap-2 cursor-pointer text-slate-500 hover:text-blue-600 transition-colors group"
+              >
+                <div className="p-1 rounded-full border border-slate-300 group-hover:border-blue-400 group-hover:bg-blue-100 transition-all">
+                  <Plus size={14} />
                 </div>
-              </Dropdown>
+                <span className="text-sm font-medium">Thêm bài học mới</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* --- MODALS --- */}
+      {/* --- MODALS PREVIEW GIỮ NGUYÊN --- */}
       <Modal
         open={isVideoModalOpen}
         onCancel={() => setIsVideoModalOpen(false)}
@@ -469,7 +477,7 @@ const ChapterItem = ({
               width="100%"
               height="100%"
               src={`https://www.youtube.com/embed/${getYoutubeId(
-                currentLesson.VideoUrl
+                currentLesson.VideoUrl,
               )}?autoplay=1`}
               title="Preview"
               frameBorder="0"

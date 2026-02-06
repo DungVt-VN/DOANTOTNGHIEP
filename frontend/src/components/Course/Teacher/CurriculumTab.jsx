@@ -11,6 +11,7 @@ import {
 import { Modal, message, Dropdown, Button, Spin, Popconfirm } from "antd";
 import api from "@/utils/axiosInstance";
 
+// Giả định các Component con vẫn giữ nguyên hoặc bạn tự điều chỉnh props
 import ChapterModal from "./CuriculumModal/ChapterModal";
 import LessonModal from "./CuriculumModal/LessonModal";
 import ImportChapterModal from "./CuriculumModal/ImportChapterModal";
@@ -18,6 +19,7 @@ import ChapterItem from "./CuriculumModal/ChapterItem";
 import RefreshButton from "@/components/RefreshButton";
 
 const CurriculumTab = ({ classId, courseId }) => {
+  // --- STATE ---
   const [chapters, setChapters] = useState([]);
   const [masterChapters, setMasterChapters] = useState([]);
   const [masterLessons, setMasterLessons] = useState([]);
@@ -35,40 +37,36 @@ const CurriculumTab = ({ classId, courseId }) => {
   const [selectedChapterId, setSelectedChapterId] = useState(null);
   const [editingLesson, setEditingLesson] = useState(null);
   const [lessonMode, setLessonMode] = useState("create");
-
-  // --- STATE MỚI: QUẢN LÝ SỬA CHƯƠNG ---
   const [editingChapter, setEditingChapter] = useState(null);
 
+  // --- FETCH DATA ---
   const fetchData = useCallback(async () => {
-    if (!courseId || !classId) return;
+    if (!classId) return;
 
     setLoading(true);
     try {
-      const [classRes, masterRes] = await Promise.all([
-        api.get(`/chapters/chapters/class/${classId}`),
-        api.get(`/courses/course-chapter/${courseId}`),
-      ]);
+      const classRes = await api.get(`/chapters/chapters/class/${classId}`);
+      setChapters(classRes.data.chapters || []);
 
-      const classData = classRes.data.chapters || classRes.data || [];
-      setChapters(classData);
-
-      const masterData = masterRes.data.chapters || masterRes.data || [];
-      setMasterChapters(masterData);
-
-      const allMasterLessons = masterData.flatMap((ch) => ch.Lessons || []);
-      setMasterLessons(allMasterLessons);
+      if (courseId) {
+        const masterRes = await api.get(`/courses/course-chapter/${courseId}`);
+        const masterData = masterRes.data.chapters || masterRes.data || [];
+        console.log(masterData);
+        setMasterChapters(masterData);
+        const allMasterLessons = masterData.flatMap((ch) => ch.Lessons || []);
+        setMasterLessons(allMasterLessons);
+      }
     } catch (error) {
       console.error("Lỗi tải dữ liệu:", error);
+      message.error("Không thể tải nội dung lớp học.");
     } finally {
       setLoading(false);
     }
-  }, [courseId, classId]);
-
+  }, [classId, courseId]);
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  // --- HANDLER: IMPORT FULL COURSE ---
   const handleImportFullCourse = async () => {
     setImporting(true);
     try {
@@ -86,47 +84,42 @@ const CurriculumTab = ({ classId, courseId }) => {
     }
   };
 
-  // --- HANDLER: CHAPTERS (TẠO & SỬA) ---
-
-  // 1. Mở modal để tạo mới
   const openCreateChapterModal = () => {
-    setEditingChapter(null); // Reset form
+    setEditingChapter(null);
     setIsChapterModalOpen(true);
   };
 
-  // 2. Mở modal để sửa (Gọi từ ChapterItem)
   const handleEditChapter = (chapter) => {
-    setEditingChapter(chapter); // Đưa dữ liệu cũ vào form
+    setEditingChapter(chapter);
     setIsChapterModalOpen(true);
   };
 
-  // 3. Lưu chương (Xử lý cả Tạo và Sửa)
+  // 3. Lưu chương (Tạo mới hoặc Cập nhật)
   const handleSaveChapter = async (values) => {
+    console.log(values);
     try {
       if (editingChapter) {
-        // --- LOGIC CẬP NHẬT ---
-        await api.put(
-          `/curriculum/chapters/${editingChapter.CourseChapterId}`,
-          {
-            ...values,
-            ClassId: classId,
-            CourseChapterId: editingChapter.CourseChapterId,
-          }
-        );
+        // --- UPDATE ---
+        await api.put(`/chapters/chapters/${editingChapter.CourseChapterId}`, {
+          ...values,
+          Title: values.Title,
+          Description: values.Description,
+        });
         message.success(`Đã cập nhật chương: ${values.Title}`);
       } else {
-        // --- LOGIC TẠO MỚI ---
-        await api.post("/curriculum/chapters", {
+        // --- CREATE ---
+        // Route: POST /api/curriculum/chapters
+        await api.post("/chapters/chapters", {
           ClassId: classId,
           Title: values.Title,
           Description: values.Description,
-          OrderIndex: chapters.length + 1,
+          OrderIndex: chapters.length + 1, // Tự tính OrderIndex cơ bản
         });
         message.success(`Đã tạo chương: ${values.Title}`);
       }
 
       setIsChapterModalOpen(false);
-      setEditingChapter(null); // Reset sau khi lưu
+      setEditingChapter(null);
       fetchData();
     } catch (error) {
       console.error(error);
@@ -134,6 +127,7 @@ const CurriculumTab = ({ classId, courseId }) => {
     }
   };
 
+  // 4. Import chương từ Master
   const handleImportChapters = async (selectedMasterChapterIds) => {
     try {
       await api.post("/chapters/import", {
@@ -144,10 +138,12 @@ const CurriculumTab = ({ classId, courseId }) => {
       setIsImportChapterModalOpen(false);
       fetchData();
     } catch (error) {
+      console.error(error);
       message.error("Lỗi khi nhập chương.");
     }
   };
 
+  // 5. Xóa chương
   const handleDeleteChapter = (chapterId) => {
     Modal.confirm({
       title: "Xóa chương này?",
@@ -157,7 +153,7 @@ const CurriculumTab = ({ classId, courseId }) => {
       cancelText: "Hủy",
       onOk: async () => {
         try {
-          await api.delete(`/curriculum/chapters/${chapterId}`);
+          await api.delete(`/chapters/chapters/${chapterId}`);
           message.success("Đã xóa chương");
           fetchData();
         } catch (error) {
@@ -167,15 +163,19 @@ const CurriculumTab = ({ classId, courseId }) => {
     });
   };
 
-  // --- HANDLER: LESSONS ---
+  // =========================================================
+  // XỬ LÝ LESSON (BÀI HỌC)
+  // =========================================================
+
   const openLessonModal = (chapterId, mode = "create") => {
     const targetChapterId =
-      chapterId || (chapters.length > 0 ? chapters[0].CourseChapterId : null);
+      chapterId || (chapters.length > 0 ? chapters[0].ChapterId : null);
 
     if (!targetChapterId) {
       message.warning("Vui lòng tạo chương trước.");
       return;
     }
+
     setEditingLesson(null);
     setSelectedChapterId(targetChapterId);
     setLessonMode(mode);
@@ -184,7 +184,7 @@ const CurriculumTab = ({ classId, courseId }) => {
 
   const handleEditLesson = (lesson) => {
     setEditingLesson(lesson);
-    setSelectedChapterId(lesson.CourseChapterId);
+    setSelectedChapterId(lesson.ChapterId);
     setLessonMode("edit");
     setIsLessonModalOpen(true);
   };
@@ -192,27 +192,31 @@ const CurriculumTab = ({ classId, courseId }) => {
   const handleSaveLesson = async (values) => {
     try {
       if (lessonMode === "import") {
-        await api.post("/curriculum/lessons/import", {
+        // Route: POST /api/chapters/lessons/import
+        await api.post("/chapters/lessons/import", {
           classId,
           chapterId: selectedChapterId,
           masterLessonIds: values.lessonIds,
         });
         message.success("Đã nhập bài học!");
       } else if (lessonMode === "edit") {
-        await api.put(`/curriculum/lessons/${editingLesson.LessonId}`, {
+        // Route: PUT /api/chapters/lessons (Có upload file nếu cần)
+        // Lưu ý: Nếu dùng FormData (upload file) thì axios call sẽ khác một chút
+        // Ở đây giả định dùng JSON hoặc component LessonModal đã xử lý FormData
+        await api.put(`/chapters/lessons`, {
           ...values,
+          LessonId: editingLesson.LessonId,
           ClassId: classId,
           ChapterId: selectedChapterId,
-          LessonId: editingLesson.LessonId,
         });
         message.success("Đã cập nhật bài học!");
       } else {
-        const payload = {
+        // Route: POST /api/chapters/lessons
+        await api.post("/chapters/lessons", {
           ...values,
           ClassId: classId,
           ChapterId: selectedChapterId,
-        };
-        await api.post("/curriculum/lessons", payload);
+        });
         message.success("Đã tạo bài học mới!");
       }
 
@@ -234,7 +238,8 @@ const CurriculumTab = ({ classId, courseId }) => {
       cancelText: "Hủy",
       onOk: async () => {
         try {
-          await api.delete(`/curriculum/lessons/${lessonId}`);
+          // Route: DELETE /api/chapters/lessons/:lessonId
+          await api.delete(`/chapters/lessons/${lessonId}`);
           message.success("Đã xóa bài học");
           fetchData();
         } catch (error) {
@@ -244,30 +249,13 @@ const CurriculumTab = ({ classId, courseId }) => {
     });
   };
 
-  const addLessonMenu = {
-    items: [
-      {
-        key: "1",
-        label: "Tạo bài học mới",
-        icon: <FilePlus size={16} />,
-        onClick: () => openLessonModal(null, "create"),
-      },
-      {
-        key: "2",
-        label: "Chọn từ Kho học liệu",
-        icon: <Download size={16} />,
-        onClick: () => openLessonModal(null, "import"),
-      },
-    ],
-  };
-
   const addChapterMenu = {
     items: [
       {
         key: "1",
         label: "Tạo thủ công",
         icon: <FilePlus size={16} />,
-        onClick: openCreateChapterModal, // Sử dụng hàm mới reset form
+        onClick: openCreateChapterModal,
       },
       {
         key: "2",
@@ -311,14 +299,6 @@ const CurriculumTab = ({ classId, courseId }) => {
               <Copy size={18} /> Đồng bộ lộ trình mẫu
             </Button>
           </Popconfirm>
-
-          <Dropdown menu={addLessonMenu} trigger={["click"]}>
-            <Button className="flex items-center gap-2 h-10 px-4 bg-white border border-slate-300 text-slate-700 rounded-lg font-semibold hover:text-blue-600 shadow-sm">
-              <Plus size={18} /> Thêm bài học{" "}
-              <ChevronDown size={14} className="text-slate-400" />
-            </Button>
-          </Dropdown>
-
           <Dropdown menu={addChapterMenu} trigger={["click"]}>
             <Button
               type="primary"
@@ -336,22 +316,22 @@ const CurriculumTab = ({ classId, courseId }) => {
         </div>
       </div>
 
+      {/* CONTENT LIST */}
       <div className="space-y-5">
         {chapters.length > 0 ? (
           chapters.map((chapter, index) => (
             <ChapterItem
-              key={chapter.CourseChapterId || index}
+              key={chapter.ChapterId || index}
               chapter={chapter}
               index={index}
+              // Actions
               onAddLesson={(chapId, mode) => openLessonModal(chapId, mode)}
-              // --- TRUYỀN HÀM XỬ LÝ CHƯƠNG ---
+              onEditChapter={() => handleEditChapter(chapter)}
               onDeleteChapter={() =>
                 handleDeleteChapter(chapter.CourseChapterId)
               }
-              onEditChapter={() => handleEditChapter(chapter)}
-              // --- TRUYỀN HÀM XỬ LÝ BÀI HỌC ---
-              onDeleteLesson={(lesson) => handleDeleteLesson(lesson.LessonId)}
               onEditLesson={handleEditLesson}
+              onDeleteLesson={(lesson) => handleDeleteLesson(lesson.LessonId)}
             />
           ))
         ) : (
@@ -362,29 +342,25 @@ const CurriculumTab = ({ classId, courseId }) => {
             </h3>
             <div className="flex justify-center gap-3 mt-4">
               <Button onClick={openCreateChapterModal}>Tạo chương mới</Button>
-              <Button
-                type="primary"
-                onClick={handleImportFullCourse}
-                icon={<Copy size={16} />}
-              >
-                Sử dụng lộ trình mẫu
-              </Button>
             </div>
           </div>
         )}
       </div>
 
-      {/* CHAPTER MODAL */}
+      {/* --- MODALS --- */}
+
+      {/* Modal Tạo/Sửa Chương */}
       <ChapterModal
         open={isChapterModalOpen}
         onClose={() => {
           setIsChapterModalOpen(false);
-          setEditingChapter(null); // Reset khi đóng
+          setEditingChapter(null);
         }}
         onFinish={handleSaveChapter}
-        initialValues={editingChapter} // Truyền dữ liệu sửa vào
+        initialValues={editingChapter}
       />
 
+      {/* Modal Import Chương từ Kho */}
       <ImportChapterModal
         open={isImportChapterModalOpen}
         onClose={() => setIsImportChapterModalOpen(false)}
@@ -392,7 +368,7 @@ const CurriculumTab = ({ classId, courseId }) => {
         masterChapters={masterChapters}
       />
 
-      {/* LESSON MODAL */}
+      {/* Modal Tạo/Sửa/Import Bài học */}
       <LessonModal
         open={isLessonModalOpen}
         onClose={() => {

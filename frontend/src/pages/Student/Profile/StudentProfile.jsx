@@ -11,6 +11,8 @@ import {
   Col,
   Avatar,
   Divider,
+  Spin,
+  Modal,
 } from "antd";
 import {
   User,
@@ -19,95 +21,129 @@ import {
   UploadCloud,
   Save,
   School,
-  Calendar,
   Hash,
   Lock,
-} from "lucide-react";
+  KeyRound,
+} from "lucide-react"; // Đã bỏ import Tag ở đây
 import api from "@/utils/axiosInstance";
 import dayjs from "dayjs";
-import { AuthContext } from "@/context/authContext"; // Để update Avatar trên Header ngay lập tức
+import { AuthContext } from "@/context/authContext";
 
 const StudentProfile = () => {
-  const { updateUser } = useContext(AuthContext); // Hàm update context (nếu có)
+  const { currentUser } = useContext(AuthContext);
+
+  // State cho Profile
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
   const [form] = Form.useForm();
-
-  // State xử lý ảnh preview
   const [avatarUrl, setAvatarUrl] = useState("");
-  const [fileList, setFileList] = useState([]);
 
-  // 1. Fetch Data
+  // State cho Modal Đổi mật khẩu
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordForm] = Form.useForm();
+
+  // 1. Fetch Data Profile
   useEffect(() => {
     const fetchProfile = async () => {
+      if (!currentUser) return;
       try {
-        const res = await api.get("/student/profile");
+        const res = await api.get(
+          `/accounts/student/${currentUser.StudentId}/${currentUser.UserId}`,
+        );
         const student = res.data;
         setData(student);
         setAvatarUrl(student.Avatar);
 
-        // Fill data vào Form
         form.setFieldsValue({
           ...student,
           BirthDate: student.BirthDate ? dayjs(student.BirthDate) : null,
+          Email: student.Email,
         });
       } catch (error) {
+        console.error(error);
         message.error("Lỗi tải thông tin cá nhân");
       }
     };
     fetchProfile();
-  }, [form]);
+  }, [currentUser, form]);
 
-  // 2. Xử lý Upload ảnh (Preview Local)
+  // 2. Preview Avatar
   const handlePreviewAvatar = ({ file }) => {
     const reader = new FileReader();
     reader.onload = (e) => setAvatarUrl(e.target.result);
     reader.readAsDataURL(file.originFileObj);
-    setFileList([file.originFileObj]); // Lưu file gốc để gửi lên server
+    message.info(
+      "Tính năng lưu ảnh đại diện đang được bảo trì (Backend cần middleware upload).",
+    );
   };
 
-  // 3. Submit Form
+  // 3. Submit Update Profile
   const onFinish = async (values) => {
     setLoading(true);
-    const formData = new FormData();
-
-    // Append các field text
-    Object.keys(values).forEach((key) => {
-      if (key === "BirthDate" && values[key]) {
-        formData.append(key, values[key].format("YYYY-MM-DD"));
-      } else if (key !== "avatarFile" && values[key] !== null) {
-        formData.append(key, values[key]);
-      }
-    });
-
-    // Append Avatar file (nếu có chọn ảnh mới)
-    if (fileList.length > 0) {
-      formData.append("avatarFile", fileList[0]);
-    } else {
-      formData.append("Avatar", avatarUrl); // Giữ link cũ
-    }
-
     try {
-      const res = await api.put("/student/profile", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const payload = {
+        FullName: values.FullName,
+        PhoneNo: values.PhoneNo,
+        ParentPhoneNo: values.ParentPhoneNo,
+        SchoolName: values.SchoolName,
+        StudentCode: values.StudentCode,
+        Email: values.Email,
+        BirthDate: values.BirthDate
+          ? values.BirthDate.format("YYYY-MM-DD")
+          : null,
+      };
+
+      await api.put(`/accounts/update-info/student`, payload);
 
       message.success("Cập nhật hồ sơ thành công!");
-
-      // Update Context nếu cần (để Header đổi avatar ngay)
-      // updateUser(res.data);
-
-      setFileList([]); // Reset file list
+      setData((prev) => ({ ...prev, ...payload }));
     } catch (error) {
       console.error(error);
-      message.error("Cập nhật thất bại");
+      if (error.response?.status === 409) {
+        message.error(error.response.data);
+      } else {
+        message.error("Cập nhật thất bại. Vui lòng thử lại.");
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  // 4. Submit Change Password
+  const onChangePasswordFinish = async (values) => {
+    setPasswordLoading(true);
+    try {
+      await api.put("/auth/change-password", {
+        userId: currentUser.UserId,
+        oldPassword: values.oldPassword,
+        newPassword: values.newPassword,
+      });
+
+      message.success("Đổi mật khẩu thành công!");
+      setIsChangePasswordOpen(false);
+      passwordForm.resetFields();
+    } catch (error) {
+      console.error(error);
+      message.error(
+        error.response?.data?.message ||
+          "Đổi mật khẩu thất bại. Kiểm tra lại mật khẩu cũ.",
+      );
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
+  if (!data && !form.getFieldValue("FullName")) {
+    return (
+      <div className="flex justify-center p-12">
+        <Spin size="large" />
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4">
       <h1 className="text-2xl font-bold text-slate-800 mb-6 flex items-center gap-2">
         <User className="text-blue-600" /> Hồ sơ cá nhân
       </h1>
@@ -119,7 +155,7 @@ const StudentProfile = () => {
         className="h-full"
       >
         <Row gutter={24}>
-          {/* CỘT TRÁI: AVATAR & BẢO MẬT */}
+          {/* CỘT TRÁI */}
           <Col xs={24} md={8}>
             <Card className="rounded-xl shadow-sm border-slate-200 text-center mb-6">
               <div className="relative inline-block group">
@@ -131,7 +167,7 @@ const StudentProfile = () => {
                 />
                 <Upload
                   showUploadList={false}
-                  beforeUpload={() => false} // Chặn auto upload
+                  beforeUpload={() => false}
                   onChange={handlePreviewAvatar}
                   accept="image/*"
                 >
@@ -141,72 +177,50 @@ const StudentProfile = () => {
                 </Upload>
               </div>
 
-              <h3 className="text-xl font-bold text-slate-800">
-                {data?.FullName}
+              <h3 className="text-xl font-bold text-slate-800 mt-2">
+                {data?.FullName || "Học viên"}
               </h3>
-              <p className="text-slate-500">{data?.Email}</p>
-              <p className="text-blue-600 font-semibold mt-1">
-                @{data?.UserName}
-              </p>
+              <p className="text-slate-500 text-sm">{data?.Email}</p>
+
+              {/* ĐÃ SỬA: Thay Tag bằng div */}
+              <div className="mt-4 flex flex-col gap-2">
+                <div className="w-full text-center py-1.5 bg-blue-50 text-blue-700 border border-blue-200 font-semibold rounded-lg text-sm">
+                  @{data?.UserName || "..."}
+                </div>
+                <div className="w-full text-center py-1.5 bg-purple-50 text-purple-700 border border-purple-200 font-semibold rounded-lg text-sm">
+                  {data?.StudentCode || "..."}
+                </div>
+              </div>
             </Card>
 
             <Card
               className="rounded-xl shadow-sm border-slate-200"
-              title="Bảo mật"
+              title={<span className="font-bold text-slate-700">Bảo mật</span>}
             >
               <Button
                 block
                 icon={<Lock size={16} />}
-                className="text-left mb-2"
+                className="text-left mb-2 h-10 rounded-lg hover:text-blue-600 hover:border-blue-600"
+                onClick={() => setIsChangePasswordOpen(true)}
               >
                 Đổi mật khẩu
               </Button>
-              <div className="text-xs text-gray-400 mt-2">
-                Lần đăng nhập cuối: {dayjs().format("DD/MM/YYYY HH:mm")}
+              <div className="text-xs text-gray-400 mt-2 text-center">
+                Cập nhật lần cuối: {dayjs().format("DD/MM/YYYY")}
               </div>
             </Card>
           </Col>
 
-          {/* CỘT PHẢI: FORM THÔNG TIN */}
+          {/* CỘT PHẢI: FORM PROFILE */}
           <Col xs={24} md={16}>
             <Card
               className="rounded-xl shadow-sm border-slate-200"
-              title="Thông tin chi tiết"
+              title={
+                <span className="font-bold text-lg text-blue-800">
+                  Thông tin chi tiết
+                </span>
+              }
             >
-              {/* 1. THÔNG TIN KHÔNG ĐƯỢC SỬA */}
-              <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-100 mb-6">
-                <Row gutter={16}>
-                  <Col span={12}>
-                    <Form.Item
-                      label="Mã sinh viên (Không thể sửa)"
-                      name="StudentCode"
-                    >
-                      <Input
-                        prefix={<Hash size={16} className="text-gray-400" />}
-                        disabled
-                        className="bg-white text-gray-500 font-bold"
-                      />
-                    </Form.Item>
-                  </Col>
-                  <Col span={12}>
-                    <Form.Item label="Tên đăng nhập" name="UserName">
-                      <Input
-                        prefix={<User size={16} className="text-gray-400" />}
-                        disabled
-                        className="bg-white text-gray-500"
-                      />
-                    </Form.Item>
-                  </Col>
-                </Row>
-              </div>
-
-              <Divider
-                orientation="left"
-                className="text-blue-600 border-blue-600"
-              >
-                Thông tin cá nhân
-              </Divider>
-
               <Row gutter={16}>
                 <Col span={24}>
                   <Form.Item
@@ -219,21 +233,27 @@ const StudentProfile = () => {
                     <Input
                       size="large"
                       prefix={<User size={16} className="text-gray-400" />}
+                      placeholder="Nhập họ và tên..."
                     />
                   </Form.Item>
                 </Col>
 
                 <Col span={12}>
                   <Form.Item
-                    label="Email liên hệ"
+                    label="Email liên hệ (Đăng nhập)"
                     name="Email"
-                    rules={[{ type: "email", message: "Email không hợp lệ" }]}
+                    rules={[
+                      { required: true, message: "Vui lòng nhập email" },
+                      { type: "email", message: "Email không hợp lệ" },
+                    ]}
+                    help="Thay đổi email sẽ thay đổi thông tin đăng nhập."
                   >
                     <Input
                       prefix={<Mail size={16} className="text-gray-400" />}
                     />
                   </Form.Item>
                 </Col>
+
                 <Col span={12}>
                   <Form.Item label="Ngày sinh" name="BirthDate">
                     <DatePicker
@@ -251,6 +271,7 @@ const StudentProfile = () => {
                     />
                   </Form.Item>
                 </Col>
+
                 <Col span={12}>
                   <Form.Item label="SĐT Phụ huynh" name="ParentPhoneNo">
                     <Input
@@ -269,14 +290,14 @@ const StudentProfile = () => {
                 </Col>
               </Row>
 
-              <div className="flex justify-end mt-4">
+              <div className="flex justify-end mt-6 pt-4 border-t border-slate-100">
                 <Button
                   type="primary"
                   htmlType="submit"
                   size="large"
                   icon={<Save size={18} />}
                   loading={loading}
-                  className="bg-blue-600 px-8"
+                  className="bg-blue-600 hover:bg-blue-700 px-8 h-10 rounded-lg shadow-md shadow-blue-200"
                 >
                   Lưu thay đổi
                 </Button>
@@ -285,6 +306,89 @@ const StudentProfile = () => {
           </Col>
         </Row>
       </Form>
+
+      {/* --- MODAL ĐỔI MẬT KHẨU --- */}
+      <Modal
+        title={
+          <div className="flex items-center gap-2 text-lg text-slate-700">
+            <KeyRound className="text-blue-600" size={20} /> Đổi mật khẩu
+          </div>
+        }
+        open={isChangePasswordOpen}
+        onCancel={() => {
+          setIsChangePasswordOpen(false);
+          passwordForm.resetFields();
+        }}
+        footer={null}
+        centered
+      >
+        <div className="pt-4">
+          <Form
+            form={passwordForm}
+            layout="vertical"
+            onFinish={onChangePasswordFinish}
+          >
+            <Form.Item
+              name="oldPassword"
+              label="Mật khẩu hiện tại"
+              rules={[{ required: true, message: "Vui lòng nhập mật khẩu cũ" }]}
+            >
+              <Input.Password placeholder="Nhập mật khẩu cũ..." />
+            </Form.Item>
+
+            <Form.Item
+              name="newPassword"
+              label="Mật khẩu mới"
+              rules={[
+                { required: true, message: "Vui lòng nhập mật khẩu mới" },
+                { min: 6, message: "Mật khẩu phải có ít nhất 6 ký tự" },
+              ]}
+            >
+              <Input.Password placeholder="Nhập mật khẩu mới..." />
+            </Form.Item>
+
+            <Form.Item
+              name="confirmPassword"
+              label="Nhập lại mật khẩu mới"
+              dependencies={["newPassword"]}
+              rules={[
+                { required: true, message: "Vui lòng nhập lại mật khẩu mới" },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    if (!value || getFieldValue("newPassword") === value) {
+                      return Promise.resolve();
+                    }
+                    return Promise.reject(
+                      new Error("Mật khẩu nhập lại không khớp!"),
+                    );
+                  },
+                }),
+              ]}
+            >
+              <Input.Password placeholder="Xác nhận mật khẩu mới..." />
+            </Form.Item>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <Button
+                onClick={() => {
+                  setIsChangePasswordOpen(false);
+                  passwordForm.resetFields();
+                }}
+              >
+                Hủy
+              </Button>
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={passwordLoading}
+                className="bg-blue-600"
+              >
+                Xác nhận đổi
+              </Button>
+            </div>
+          </Form>
+        </div>
+      </Modal>
     </div>
   );
 };

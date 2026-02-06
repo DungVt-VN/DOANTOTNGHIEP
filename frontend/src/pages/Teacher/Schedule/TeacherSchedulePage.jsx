@@ -50,7 +50,7 @@ const TeacherSchedulePage = () => {
   // --- 1. LOGIC NGÀY THÁNG ---
   const startOfWeek = currentDate.startOf("isoWeek");
   const weekDays = Array.from({ length: 7 }).map((_, i) =>
-    startOfWeek.add(i, "day")
+    startOfWeek.add(i, "day"),
   );
 
   // --- 2. FETCH DATA ---
@@ -61,7 +61,6 @@ const TeacherSchedulePage = () => {
       try {
         const startDate = startOfWeek.format("YYYY-MM-DD");
         const endDate = startOfWeek.add(6, "day").format("YYYY-MM-DD");
-
         const res = await api.get("/classes/teacher-schedule-by-week", {
           params: { teacherId: currentUser.TeacherId, startDate, endDate },
         });
@@ -90,7 +89,7 @@ const TeacherSchedulePage = () => {
         return daysArray.includes(targetDay);
       })
       .sort((a, b) =>
-        (a.StartTime || "00:00:00").localeCompare(b.StartTime || "00:00:00")
+        (a.StartTime || "00:00:00").localeCompare(b.StartTime || "00:00:00"),
       );
   };
 
@@ -233,7 +232,7 @@ const TeacherSchedulePage = () => {
                           key={`${sch.ClassId}-${date.format("DD")}`}
                           onClick={() => setSelectedClass(sch)}
                           className={`p-3 rounded-lg border border-l-[4px] shadow-sm hover:shadow-md cursor-pointer transition-all group active:scale-95 ${getClassColor(
-                            sch.ClassName
+                            sch.ClassName,
                           )}`}
                         >
                           <div className="flex items-center gap-1.5 mb-2">

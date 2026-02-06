@@ -243,6 +243,93 @@ export const getLessonById = async (req, res) => {
   }
 };
 
+export const updateProgress = async (req, res) => {
+  console.log("dd");
+  try {
+    // Frontend gửi lên userId thay vì studentId
+    const { userId, lessonId, isCompleted } = req.body;
+
+    if (!userId || !lessonId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Thiếu thông tin" });
+    }
+
+    // BƯỚC 1: Tìm StudentId dựa trên UserId
+    const studentQuery = `SELECT StudentId FROM Students WHERE UserId = ?`;
+    const studentRows = await query(studentQuery, [userId]);
+
+    if (studentRows.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Không tìm thấy học viên này" });
+    }
+
+    const studentId = studentRows[0].StudentId;
+
+    // BƯỚC 2: Insert hoặc Update vào bảng Progress dùng StudentId vừa tìm được
+    const sql = `
+      INSERT INTO Student_Lesson_Progress 
+        (StudentId, LessonId, IsCompleted, LastAccessed, CompletedAt)
+      VALUES 
+        (?, ?, ?, NOW(), IF(? = 1, NOW(), NULL))
+      ON DUPLICATE KEY UPDATE
+        IsCompleted = VALUES(IsCompleted),
+        LastAccessed = NOW(),
+        CompletedAt = IF(CompletedAt IS NULL AND VALUES(IsCompleted) = 1, NOW(), CompletedAt)
+    `;
+
+    await query(sql, [studentId, lessonId, isCompleted, isCompleted]);
+
+    return res.status(200).json({
+      success: true,
+      message: "Cập nhật tiến độ thành công",
+    });
+  } catch (error) {
+    console.error("Error updating progress:", error);
+    return res.status(500).json({ success: false, message: "Lỗi Server" });
+  }
+};
+
+// --- API 2: Lấy danh sách bài đã học (Để hiển thị tích xanh) ---
+export const getStudentProgress = async (req, res) => {
+  console.log("sldfj");
+  try {
+    // 1. Nhận UserId từ params (Ví dụ: /api/progress/:userId)
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ success: false, message: "Thiếu UserId" });
+    }
+
+    // 2. Viết lại Query:
+    // Vì bảng Progress chỉ chứa StudentId, ta cần JOIN với bảng Students
+    // để tìm những record progress ứng với UserId được truyền vào.
+    const sql = `
+      SELECT slp.LessonId 
+      FROM Student_Lesson_Progress slp
+      INNER JOIN Students s ON slp.StudentId = s.StudentId
+      WHERE s.UserId = ? AND slp.IsCompleted = 1
+    `;
+
+    // 3. Thực thi query với tham số là userId
+    const rows = await query(sql, [userId]);
+
+    // 4. Map dữ liệu trả về mảng ID: [64, 65, 70]
+    const completedLessonIds = rows.map((row) => row.LessonId);
+
+    return res.status(200).json({
+      success: true,
+      completedLessonIds: completedLessonIds,
+    });
+  } catch (error) {
+    console.error("Lỗi getStudentProgress:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi hệ thống khi lấy dữ liệu tiến độ",
+    });
+  }
+};
 // --- DELETE (XÓA BÀI HỌC + XÓA TÀI LIỆU + XÓA VIDEO) ---
 export const deleteLesson = async (req, res) => {
   try {
@@ -251,7 +338,7 @@ export const deleteLesson = async (req, res) => {
     // 1. Lấy thông tin để xóa Video
     const lessons = await query(
       "SELECT VideoUrl FROM Lessons WHERE LessonId = ?",
-      [lessonId]
+      [lessonId],
     );
     if (lessons.length > 0 && lessons[0].VideoUrl) {
       await deleteCloudinaryFile(lessons[0].VideoUrl);
@@ -260,7 +347,7 @@ export const deleteLesson = async (req, res) => {
     // 2. Lấy danh sách tài liệu để xóa file trên Cloud
     const materials = await query(
       "SELECT FileUrl FROM LessonMaterials WHERE LessonId = ?",
-      [lessonId]
+      [lessonId],
     );
 
     if (materials.length > 0) {

@@ -7,6 +7,56 @@ const query = (sql, params) => {
   });
 };
 
+export const getQuizzesByClass = async (req, res) => {
+  const classId = req.params.classId;
+  const studentId = req.query.studentId;
+
+  if (!classId) {
+    return res.status(400).json("Thiếu Class ID.");
+  }
+
+  try {
+    const sql = `
+      SELECT 
+        Q.*,
+        -- C.ClassName phụ thuộc vào Q.ClassId nên thường MySQL sẽ cho qua, 
+        -- nhưng để chắc chắn không lỗi strict mode, ta có thể dùng MAX hoặc ANY_VALUE
+        MAX(C.ClassName) as ClassName,
+        
+        COUNT(QQM.QuestionId) as QuestionCount,
+        
+        -- SỬA LỖI Ở ĐÂY: Dùng MAX() để thỏa mãn only_full_group_by
+        MAX(QR.ResultId) as ResultId,
+        MAX(QR.Score) as Score,
+        (MAX(QR.ResultId) IS NOT NULL) as IsSubmitted,
+
+        -- Tính trạng thái
+        CASE
+            WHEN NOW() < Q.StartTime THEN 'upcoming'
+            WHEN NOW() >= Q.StartTime AND (Q.EndTime IS NULL OR NOW() <= Q.EndTime) THEN 'ongoing'
+            ELSE 'finished'
+        END as Status
+
+      FROM Quizzes Q
+      LEFT JOIN Classes C ON Q.ClassId = C.ClassId
+      LEFT JOIN Quiz_Question_Mapping QQM ON Q.QuizId = QQM.QuizId
+      
+      -- LEFT JOIN kết quả của riêng học sinh
+      LEFT JOIN QuizResults QR ON Q.QuizId = QR.QuizId AND QR.StudentId = ?
+
+      WHERE Q.ClassId = ?
+      GROUP BY Q.QuizId
+      ORDER BY Q.StartTime DESC
+    `;
+
+    const data = await query(sql, [studentId, classId]);
+
+    return res.status(200).json(data);
+  } catch (err) {
+    console.error("Lỗi getQuizzesByClass:", err);
+    return res.status(500).json({ message: "Lỗi Server", error: err });
+  }
+};
 // --- 1. TẠO BÀI KIỂM TRA (QUIZ) ---
 // --- 1. TẠO BÀI KIỂM TRA (Sửa Status) ---
 export const addQuiz = async (req, res) => {
@@ -245,7 +295,7 @@ export const submitQuiz = async (req, res) => {
   try {
     const studentRes = await query(
       "SELECT StudentId FROM Students WHERE UserId = ?",
-      [userId]
+      [userId],
     );
     if (studentRes.length === 0)
       return res.status(403).json("Học viên không tồn tại");
@@ -258,7 +308,7 @@ export const submitQuiz = async (req, res) => {
       JOIN QuestionOptions QO ON QQM.QuestionId = QO.QuestionId
       WHERE QQM.QuizId = ? AND QO.IsCorrect = 1
     `,
-      [quizId]
+      [quizId],
     );
 
     const correctMap = new Map();
@@ -269,14 +319,14 @@ export const submitQuiz = async (req, res) => {
 
     const totalQuestionsRes = await query(
       "SELECT COUNT(*) as count FROM Quiz_Question_Mapping WHERE QuizId = ?",
-      [quizId]
+      [quizId],
     );
     const totalQuestions = totalQuestionsRes[0].count;
 
     let correctCount = 0;
     const processedAnswers = answers.map((ans) => {
       const isCorrect = (correctMap.get(ans.questionId) || []).includes(
-        ans.selectedOptionId
+        ans.selectedOptionId,
       );
       if (isCorrect) correctCount++;
       return { ...ans, isCorrect };
@@ -289,7 +339,7 @@ export const submitQuiz = async (req, res) => {
       INSERT INTO QuizResults (QuizId, StudentId, Score, CorrectCount, TotalQuestions, CompletedAt)
       VALUES (?, ?, ?, ?, ?, NOW())
     `,
-      [quizId, studentId, score, correctCount, totalQuestions]
+      [quizId, studentId, score, correctCount, totalQuestions],
     );
 
     const resultId = resultRes.insertId;
@@ -304,7 +354,7 @@ export const submitQuiz = async (req, res) => {
       ]);
       await query(
         "INSERT INTO StudentAnswers (ResultId, QuestionId, SelectedOptionId, TextAnswer, IsCorrect) VALUES ?",
-        [answerValues]
+        [answerValues],
       );
     }
 
@@ -322,7 +372,7 @@ export const getQuizResult = async (req, res) => {
   try {
     const sRes = await query(
       "SELECT StudentId FROM Students WHERE UserId = ?",
-      [userId]
+      [userId],
     );
     const studentId = sRes[0].StudentId;
 
@@ -333,7 +383,7 @@ export const getQuizResult = async (req, res) => {
       WHERE QR.QuizId = ? AND QR.StudentId = ?
       ORDER BY QR.CompletedAt DESC LIMIT 1
     `,
-      [quizId, studentId]
+      [quizId, studentId],
     );
 
     if (resultData.length === 0)
@@ -348,7 +398,7 @@ export const getQuizResult = async (req, res) => {
       LEFT JOIN QuestionOptions QO ON SA.SelectedOptionId = QO.OptionId
       WHERE SA.ResultId = ?
     `,
-      [result.ResultId]
+      [result.ResultId],
     );
 
     return res.status(200).json({ overview: result, details });
@@ -367,7 +417,7 @@ export const deleteQuiz = async (req, res) => {
     // 1. Kiểm tra xem Quiz có tồn tại không
     const checkRes = await query(
       "SELECT QuizId FROM Quizzes WHERE QuizId = ?",
-      [quizId]
+      [quizId],
     );
     if (checkRes.length === 0) {
       await query("ROLLBACK");
@@ -411,7 +461,7 @@ export const updateQuiz = async (req, res) => {
     // 1. Kiểm tra tồn tại
     const checkRes = await query(
       "SELECT QuizId FROM Quizzes WHERE QuizId = ?",
-      [quizId]
+      [quizId],
     );
     if (checkRes.length === 0) {
       await query("ROLLBACK");
@@ -494,7 +544,7 @@ export const updateQuizQuestions = async (req, res) => {
     // Bước 1: Kiểm tra xem Quiz có tồn tại không
     const checkQuiz = await query(
       "SELECT QuizId FROM Quizzes WHERE QuizId = ?",
-      [quizId]
+      [quizId],
     );
     if (checkQuiz.length === 0) {
       await query("ROLLBACK");
@@ -547,7 +597,7 @@ export const updateQuizDistribute = async (req, res) => {
     // 1. Kiểm tra bài thi có tồn tại không
     const checkExist = await query(
       "SELECT QuizId FROM Quizzes WHERE QuizId = ?",
-      [id]
+      [id],
     );
 
     if (checkExist.length === 0) {
@@ -588,5 +638,380 @@ export const updateQuizDistribute = async (req, res) => {
   } catch (err) {
     console.error("Lỗi updateQuizDistribute:", err);
     return res.status(500).json({ message: "Lỗi server", error: err.message });
+  }
+};
+
+export const getQuizDetail = async (req, res) => {
+  const { quizId, userId } = req.params;
+
+  try {
+    // Tìm StudentId từ userId
+    const students = await query(
+      "SELECT StudentId FROM Students WHERE UserId = ?",
+      [userId],
+    );
+
+    if (!students || students.length === 0)
+      return res
+        .status(403)
+        .json({ message: "Không tìm thấy thông tin học sinh" });
+
+    const studentId = students[0].StudentId;
+
+    // Lấy thông tin bài thi
+    const quizzes = await query("SELECT * FROM Quizzes WHERE QuizId = ?", [
+      quizId,
+    ]);
+
+    if (!quizzes || quizzes.length === 0)
+      return res.status(404).json({ message: "Đề thi không tồn tại" });
+
+    const quiz = quizzes[0];
+
+    // Lấy danh sách câu hỏi
+    const questions = await query(
+      `SELECT qb.QuestionId, qb.QuestionContent, qb.QuestionType, qb.MediaUrl, qb.MediaType, qm.OrderIndex
+       FROM QuestionBank qb
+       JOIN Quiz_Question_Mapping qm ON qb.QuestionId = qm.QuestionId
+       WHERE qm.QuizId = ?
+       ORDER BY qm.OrderIndex ASC`,
+      [quizId],
+    );
+
+    // Lấy tất cả options
+    const allOptions = await query(
+      `SELECT OptionId, QuestionId, OptionText 
+       FROM QuestionOptions 
+       WHERE QuestionId IN (SELECT QuestionId FROM Quiz_Question_Mapping WHERE QuizId = ?)`,
+      [quizId],
+    );
+
+    // Gán options vào từng câu hỏi
+    const questionsWithOpts = questions.map((q) => ({
+      ...q,
+      options: allOptions.filter((opt) => opt.QuestionId === q.QuestionId),
+    }));
+
+    // Khôi phục các câu trả lời học sinh đã "Lưu" trước đó
+    const savedAnswers = await query(
+      `SELECT sa.QuestionId, sa.SelectedOptionId, sa.TextAnswer
+       FROM StudentAnswers sa
+       JOIN QuizResults qr ON sa.ResultId = qr.ResultId
+       WHERE qr.QuizId = ? AND qr.StudentId = ? AND qr.Score IS NULL`,
+      [quizId, studentId],
+    );
+
+    res
+      .status(200)
+      .json({ ...quiz, questions: questionsWithOpts, savedAnswers });
+  } catch (error) {
+    res.status(500).json({ message: "Lỗi hệ thống", error: error.message });
+  }
+};
+
+export const saveSingleAnswer = async (req, res) => {
+  const { quizId, questionId, answer, userId } = req.body;
+
+  try {
+    // 1. Tìm StudentId
+    const students = await query(
+      "SELECT StudentId FROM Students WHERE UserId = ?",
+      [userId],
+    );
+
+    if (!students || students.length === 0)
+      return res
+        .status(403)
+        .json({ message: "Không tìm thấy thông tin học sinh" });
+
+    const studentId = students[0].StudentId;
+
+    // 2. Tìm hoặc Tạo Quiz ResultId
+    let results = await query(
+      "SELECT ResultId FROM QuizResults WHERE QuizId = ? AND StudentId = ? AND Score IS NULL",
+      [quizId, studentId],
+    );
+
+    let resultId;
+    if (!results || results.length === 0) {
+      const newResult = await query(
+        "INSERT INTO QuizResults (QuizId, StudentId) VALUES (?, ?)",
+        [quizId, studentId],
+      );
+      resultId = newResult.insertId;
+    } else {
+      resultId = results[0].ResultId;
+    }
+
+    // --- 3. XỬ LÝ LOGIC LƯU ĐÁP ÁN THEO KIỂU DỮ LIỆU ---
+    let selectedOptionId = null;
+    let textAnswer = null;
+
+    if (Array.isArray(answer)) {
+      // TRƯỜNG HỢP: Chọn nhiều đáp án (Multiple Choice)
+      // Chuyển mảng [10, 11] thành chuỗi "10,11" để lưu vào cột TextAnswer
+      textAnswer = answer.join(",");
+    } else if (
+      typeof answer === "number" ||
+      (!isNaN(answer) && typeof answer !== "string")
+    ) {
+      // TRƯỜNG HỢP: Chọn một đáp án (Single Choice)
+      selectedOptionId = answer;
+    } else {
+      // TRƯỜNG HỢP: Tự luận (TextInput)
+      textAnswer = answer;
+    }
+
+    // 4. Thực hiện INSERT hoặc UPDATE
+    await query(
+      `INSERT INTO StudentAnswers (ResultId, QuestionId, SelectedOptionId, TextAnswer)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE 
+           SelectedOptionId = VALUES(SelectedOptionId), 
+           TextAnswer = VALUES(TextAnswer)`,
+      [resultId, questionId, selectedOptionId, textAnswer],
+    );
+
+    res.status(200).json({ success: true, message: "Đã lưu đáp án tạm thời" });
+  } catch (error) {
+    console.error("Save Answer Error:", error);
+    res
+      .status(500)
+      .json({ message: "Lỗi khi lưu câu hỏi", error: error.message });
+  }
+};
+
+// 3. Nộp bài và chấm điểm
+export const submitQuiz2 = async (req, res) => {
+  const { quizId, answers, userId } = req.body;
+
+  try {
+    // 1. Lấy StudentId từ UserId
+    const students = await query(
+      "SELECT StudentId FROM Students WHERE UserId = ?",
+      [userId],
+    );
+
+    if (!students || students.length === 0)
+      return res.status(403).json({ message: "Học sinh không tồn tại" });
+
+    const studentId = students[0].StudentId;
+
+    // 2. Tìm ResultId hiện tại
+    const currentResults = await query(
+      "SELECT ResultId FROM QuizResults WHERE QuizId = ? AND StudentId = ? AND Score IS NULL",
+      [quizId, studentId],
+    );
+
+    if (!currentResults || currentResults.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "Không tìm thấy phiên làm bài để nộp" });
+    }
+    const resultId = currentResults[0].ResultId;
+
+    // 3. Lấy tất cả đáp án đúng của Quiz và loại câu hỏi
+    const quizQuestions = await query(
+      `SELECT qb.QuestionId, qb.QuestionType, qo.OptionId
+       FROM QuestionBank qb
+       JOIN Quiz_Question_Mapping qm ON qb.QuestionId = qm.QuestionId
+       LEFT JOIN QuestionOptions qo ON qb.QuestionId = qo.QuestionId AND qo.IsCorrect = TRUE
+       WHERE qm.QuizId = ?`,
+      [quizId],
+    );
+
+    // 4. Nhóm đáp án đúng theo QuestionId
+    // Cấu trúc: { "1": { type: "SingleChoice", corrects: [10] }, "2": { type: "MultipleChoice", corrects: [15, 16] } }
+    const correctMap = quizQuestions.reduce((acc, curr) => {
+      if (!acc[curr.QuestionId]) {
+        acc[curr.QuestionId] = { type: curr.QuestionType, corrects: [] };
+      }
+      if (curr.OptionId) {
+        acc[curr.QuestionId].corrects.push(curr.OptionId);
+      }
+      return acc;
+    }, {});
+
+    // 5. Tính toán kết quả
+    let correctCount = 0;
+    const totalQuestions = Object.keys(correctMap).length;
+
+    Object.keys(correctMap).forEach((qId) => {
+      const questionData = correctMap[qId];
+      const userAnsObj = answers.find(
+        (a) => String(a.questionId) === String(qId),
+      );
+      const userSelected = userAnsObj ? userAnsObj.answer : null;
+
+      if (questionData.type === "MultipleChoice") {
+        // Chuyển đáp án người dùng về mảng (vì frontend có thể gửi mảng hoặc giá trị đơn)
+        const userAnsArray = Array.isArray(userSelected)
+          ? userSelected
+          : [userSelected].filter(Boolean);
+        const corrects = questionData.corrects;
+
+        // So sánh: Số lượng phải bằng nhau VÀ mọi phần tử trong corrects phải có trong userAnsArray
+        const isAllCorrect =
+          corrects.length === userAnsArray.length &&
+          corrects.every((id) => userAnsArray.includes(id));
+
+        if (isAllCorrect) correctCount++;
+      } else {
+        // Đối với SingleChoice hoặc TextInput (nếu TextInput lưu ID option)
+        if (userSelected && questionData.corrects.includes(userSelected)) {
+          correctCount++;
+        }
+      }
+    });
+
+    const finalScore =
+      totalQuestions > 0 ? (correctCount / totalQuestions) * 10 : 0;
+
+    // 6. Cập nhật bảng QuizResults
+    await query(
+      `UPDATE QuizResults 
+       SET Score = ?, CorrectCount = ?, TotalQuestions = ?, CompletedAt = CURRENT_TIMESTAMP
+       WHERE ResultId = ?`,
+      [finalScore, correctCount, totalQuestions, resultId],
+    );
+
+    // 7. Tự động lưu vào bảng Submissions (Assignment logic)
+    const assignments = await query(
+      "SELECT AssignmentId FROM Assignments WHERE QuizId = ? LIMIT 1",
+      [quizId],
+    );
+
+    if (assignments && assignments.length > 0) {
+      const assignmentId = assignments[0].AssignmentId;
+      const existingSub = await query(
+        "SELECT SubmissionId FROM Submissions WHERE AssignmentId = ? AND StudentId = ?",
+        [assignmentId, studentId],
+      );
+
+      if (existingSub.length === 0) {
+        await query(
+          `INSERT INTO Submissions (AssignmentId, StudentId, ResultId, Score, Status)
+           VALUES (?, ?, ?, ?, 'Submitted')`,
+          [assignmentId, studentId, resultId, finalScore],
+        );
+      } else {
+        await query(
+          `UPDATE Submissions 
+           SET ResultId = ?, Score = ?, SubmissionDate = CURRENT_TIMESTAMP, Status = 'Submitted'
+           WHERE SubmissionId = ?`,
+          [resultId, finalScore, existingSub[0].SubmissionId],
+        );
+      }
+    }
+
+    res.status(200).json({
+      message: "Nộp bài thành công",
+      score: finalScore.toFixed(2),
+      correctCount,
+      totalQuestions,
+      resultId: resultId,
+    });
+  } catch (error) {
+    console.error("Submit Error:", error);
+    res
+      .status(500)
+      .json({ message: "Lỗi khi chấm điểm", error: error.message });
+  }
+};
+
+export const getQuizResultDetail = async (req, res) => {
+  const resultId = req.params.resultId;
+
+  if (!resultId) {
+    return res.status(400).json({ message: "Thiếu Result ID" });
+  }
+
+  try {
+    // =========================================================
+    // QUERY A: Lấy thông tin tổng quan (Header)
+    // =========================================================
+    const sqlSummary = `
+      SELECT 
+        qr.ResultId, 
+        qr.Score, 
+        qr.CorrectCount, 
+        qr.TotalQuestions, 
+        qr.CompletedAt,
+        q.Title AS QuizTitle,
+        s.FullName AS StudentName,
+        s.StudentCode
+      FROM QuizResults qr
+      JOIN Quizzes q ON qr.QuizId = q.QuizId
+      JOIN Students s ON qr.StudentId = s.StudentId
+      WHERE qr.ResultId = ?
+    `;
+
+    // Sử dụng hàm query wrapper
+    const summaryRows = await query(sqlSummary, [resultId]);
+
+    if (summaryRows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy kết quả bài làm." });
+    }
+
+    const summary = summaryRows[0];
+
+    // =========================================================
+    // QUERY B: Lấy chi tiết câu trả lời (Body)
+    // =========================================================
+    // Logic:
+    // - Join StudentAnswers với QuestionBank để lấy nội dung câu hỏi.
+    // - Join với QuestionOptions (qo_selected) để lấy nội dung đáp án HỌC VIÊN CHỌN.
+    // - Dùng Subquery để lấy nội dung đáp án ĐÚNG (qo_correct).
+
+    const sqlDetails = `
+      SELECT 
+        sa.AnswerId,
+        sa.IsCorrect,
+        sa.TextAnswer, -- Trường hợp câu hỏi tự luận
+        qb.QuestionContent,
+        qb.QuestionType,
+        
+        -- Lấy text đáp án học viên đã chọn
+        qo_selected.OptionText AS SelectedOptionText,
+        
+        -- Lấy text đáp án đúng (Subquery lấy 1 đáp án đúng làm mẫu)
+        (
+          SELECT OptionText 
+          FROM QuestionOptions 
+          WHERE QuestionId = sa.QuestionId AND IsCorrect = 1 
+          LIMIT 1
+        ) AS CorrectOptionText
+
+      FROM StudentAnswers sa
+      JOIN QuestionBank qb ON sa.QuestionId = qb.QuestionId
+      LEFT JOIN QuestionOptions qo_selected ON sa.SelectedOptionId = qo_selected.OptionId
+      WHERE sa.ResultId = ?
+      ORDER BY sa.AnswerId ASC
+    `;
+
+    // Sử dụng hàm query wrapper
+    const detailRows = await query(sqlDetails, [resultId]);
+
+    // =========================================================
+    // TRẢ VỀ KẾT QUẢ JSON
+    // =========================================================
+    return res.status(200).json({
+      ResultId: summary.ResultId,
+      QuizTitle: summary.QuizTitle,
+      StudentName: summary.StudentName,
+      StudentCode: summary.StudentCode,
+      Score: summary.Score,
+      CorrectCount: summary.CorrectCount,
+      TotalQuestions: summary.TotalQuestions,
+      CompletedAt: summary.CompletedAt,
+      StudentAnswers: detailRows, // Mảng chi tiết câu hỏi khớp với Frontend
+    });
+  } catch (error) {
+    console.error("Lỗi lấy chi tiết bài làm quiz:", error);
+    return res
+      .status(500)
+      .json({ message: "Lỗi server khi lấy chi tiết bài làm." });
   }
 };

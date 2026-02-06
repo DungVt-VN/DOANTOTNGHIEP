@@ -43,6 +43,7 @@ import StudentSchedule from "./pages/Student/Schedule/StudentSchedule.jsx";
 import StudentTuition from "./pages/Student/Finance/StudentTuition.jsx";
 import StudentProfile from "./pages/Student/Profile/StudentProfile.jsx";
 import StudentCourseRegister from "./pages/Student/CourseRegister/StudentCourseRegister.jsx";
+import QuizPage from "./pages/QuizPage.jsx";
 
 const AdminRouter = [
   {
@@ -135,6 +136,10 @@ const StudentRouter = [
   {
     path: "/student/register-class",
     element: <StudentCourseRegister />,
+  },
+  {
+    path: "/student/quiz/:quizId",
+    element: <QuizPage />,
   },
 ];
 

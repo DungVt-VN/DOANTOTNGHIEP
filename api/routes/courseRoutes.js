@@ -24,6 +24,7 @@ import {
   getTeacherCourses,
   getClassesByCourseId,
   importFullCourse,
+  getChaptersByClassId,
 } from "../controllers/Course/courseController.js";
 
 import {
@@ -46,6 +47,11 @@ router.get("/all", authorize, getAllCourses);
 router.get("/", authorize, getCourses);
 router.post("/", authorize, addCourse);
 router.get("/classes-by-course/:courseId", authorize, getClassesByCourseId);
+router.get(
+  "/classes-by-course-class/:classId",
+  authorize,
+  getChaptersByClassId,
+);
 router.post("/import", importFullCourse);
 
 // Route Teacher có prefix cụ thể nên an toàn

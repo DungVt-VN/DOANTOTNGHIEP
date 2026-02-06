@@ -138,19 +138,6 @@ const GuestHeader = () => {
               >
                 <span className="mx-2">Trang chủ</span>
               </Item>
-
-              <Item
-                to="/courses"
-                className={({ isActive }) => (isActive ? "active" : "")}
-              >
-                <span className="mx-2">Khóa học</span>
-              </Item>
-              <Item
-                to="/contact"
-                className={({ isActive }) => (isActive ? "active" : "")}
-              >
-                <span className="mx-2">Liên hệ</span>
-              </Item>
             </SlickBar>
           </Container>
 

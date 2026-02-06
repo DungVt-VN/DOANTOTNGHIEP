@@ -4,7 +4,7 @@ import { Info, BookOpen, Layers, FileText } from "lucide-react";
 const MaterialCourseCardItem = ({ course, renderStatusBadge, navigate }) => {
   // 1. CHUẨN HÓA DỮ LIỆU
   const info = course;
-
+  console.log(info);
   return (
     <div
       onClick={() => navigate && navigate()}
@@ -56,29 +56,7 @@ const MaterialCourseCardItem = ({ course, renderStatusBadge, navigate }) => {
           {info.Description || "Chưa có mô tả cho khóa học này."}
         </p>
 
-        {/* Thông tin thống kê nhỏ (Chương / Bài học) */}
-        <div className="pt-4 border-t border-gray-100 flex items-center justify-between text-xs text-slate-400">
-          <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1.5" title="Số chương">
-              <Layers size={14} className="text-blue-500" />
-              <span className="font-medium text-slate-600">
-                {info.ChapterCount || 0} chương
-              </span>
-            </span>
-            <span className="flex items-center gap-1.5" title="Số bài học">
-              <FileText size={14} className="text-orange-500" />
-              <span className="font-medium text-slate-600">
-                {info.LessonCount || 0} bài
-              </span>
-            </span>
-          </div>
 
-          {/* Icon Info nhỏ */}
-          <Info
-            size={16}
-            className="text-slate-300 group-hover:text-blue-500 transition-colors"
-          />
-        </div>
       </div>
     </div>
   );

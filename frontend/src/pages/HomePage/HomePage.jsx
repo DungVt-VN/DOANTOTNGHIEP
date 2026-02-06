@@ -49,7 +49,7 @@ const HomePage = () => {
           </div>
           <div className="mb-8 text-gray-600 text-lg">
             <p>
-              BK-ELEARNING là nền tảng học tập trực tuyến hàng đầu, cung cấp các
+              EduCenter là nền tảng học tập trực tuyến hàng đầu, cung cấp các
               khóa học chất lượng từ cơ bản đến nâng cao: Toán, Văn, Anh và Công
               nghệ thông tin. Học chủ động, hiệu quả vượt trội.
             </p>
@@ -102,8 +102,9 @@ const HomePage = () => {
         <h2 className="text-3xl font-bold mb-4 text-gray-800">
           Thành Tựu Của Chúng Tôi
         </h2>
+        {/* Đã thêm đoạn văn bản bạn yêu cầu vào đây */}
         <p className="text-gray-500 max-w-2xl mx-auto mb-10">
-          Với hơn 16 năm kinh nghiệm, BK-ELEARNING tự hào là người bạn đồng hành
+          Với hơn 16 năm kinh nghiệm, EduCenter tự hào là người bạn đồng hành
           tin cậy của hàng ngàn học sinh, sinh viên trên khắp cả nước.
         </p>
 

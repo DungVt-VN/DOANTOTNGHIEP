@@ -54,7 +54,7 @@ const ClassOverview = ({ classInfo, notifications, loading }) => {
                     <User size={16} />
                   </div>
                   <span>
-                    GV: <strong>{classInfo.TeacherName}</strong>
+                    Giảng viên: <strong>{classInfo.TeacherName}</strong>
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
@@ -73,22 +73,6 @@ const ClassOverview = ({ classInfo, notifications, loading }) => {
                   <span>Phòng: {classInfo.RoomName}</span>
                 </div>
               </div>
-            </div>
-
-            <div className="pt-6 mt-4 border-t border-gray-100">
-              <div className="flex justify-between text-sm mb-1.5">
-                <span className="text-slate-500 font-medium">
-                  Tiến độ khóa học
-                </span>
-                <span className="font-bold text-blue-600">45%</span>
-              </div>
-              <Progress
-                percent={45}
-                showInfo={false}
-                strokeColor="#3b82f6"
-                trailColor="#f1f5f9"
-                size="small"
-              />
             </div>
           </div>
         </div>

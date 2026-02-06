@@ -1,663 +1,403 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  Search,
   Plus,
-  FileText,
-  Calendar,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  ClipboardList,
-  BarChart3,
   Pencil,
   Trash2,
-  Eye,
-  Save,
-  BookOpen,
-  Upload as UploadIcon,
-  Paperclip,
-  X as XIcon,
+  FileText,
+  CheckCircle2,
+  Calendar,
+  BarChart3,
+  Clock,
+  User,
+  Users,
 } from "lucide-react";
 import {
   Table,
   Button,
-  Input,
-  Tag,
-  Tooltip,
   Progress,
   Modal,
-  Form,
-  Select,
-  DatePicker,
   message,
-  Row,
-  Col,
-  Descriptions,
+  Tag,
+  Tooltip,
   Empty,
-  Upload,
-  Radio,
 } from "antd";
 import dayjs from "dayjs";
 import api from "@/utils/axiosInstance";
 
-// --- SUB-COMPONENT: QUIZ SELECTOR (GIỮ NGUYÊN) ---
-const QuizSelector = ({ open, onCancel, onSelectQuiz, courseId }) => {
-  const [quizzes, setQuizzes] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedQuizId, setSelectedQuizId] = useState(null);
-
-  useEffect(() => {
-    if (open) fetchQuizzes();
-  }, [open]);
-
-  const fetchQuizzes = async () => {
-    setLoading(true);
-    try {
-      const res = await api.get(`/quizzes`, {
-        params: { courseId, type: "master" },
-      });
-      setQuizzes(res.data);
-    } catch (error) {
-      message.error("Lỗi tải danh sách đề thi");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const columns = [
-    {
-      title: "Tên bài kiểm tra",
-      dataIndex: "Title",
-      render: (text) => <span className="font-semibold">{text}</span>,
-    },
-    {
-      title: "Số câu",
-      dataIndex: "QuestionCount",
-      align: "center",
-      render: (c) => <Tag color="blue">{c} câu</Tag>,
-    },
-    {
-      title: "Thời gian",
-      dataIndex: "DurationMinutes",
-      render: (m) => <span>{m} phút</span>,
-    },
-  ];
-
-  const handleOk = () => {
-    if (!selectedQuizId) return;
-    const selectedQuiz = quizzes.find((q) => q.QuizId === selectedQuizId);
-    onSelectQuiz(selectedQuiz);
-    onCancel();
-  };
-
-  return (
-    <Modal
-      title="Chọn đề thi từ Ngân hàng"
-      open={open}
-      onCancel={onCancel}
-      width={700}
-      onOk={handleOk}
-      okButtonProps={{ disabled: !selectedQuizId }}
-      centered
-    >
-      <Table
-        rowKey="QuizId"
-        columns={columns}
-        dataSource={quizzes}
-        loading={loading}
-        rowSelection={{
-          type: "radio",
-          selectedRowKeys: selectedQuizId ? [selectedQuizId] : [],
-          onChange: (keys) => setSelectedQuizId(keys[0]),
-        }}
-        pagination={{ pageSize: 5 }}
-        size="small"
-        onRow={(record) => ({
-          onClick: () => setSelectedQuizId(record.QuizId),
-          style: { cursor: "pointer" },
-        })}
-      />
-    </Modal>
-  );
-};
-
-// --- COMPONENT 1: ASSIGNMENT FORM MODAL (CẬP NHẬT) ---
-const AssignmentFormModal = ({
-  open,
-  onCancel,
-  onFinish,
-  initialValues,
-  loading,
-  courseId,
-}) => {
-  const [form] = Form.useForm();
-  const [assignmentType, setAssignmentType] = useState("homework");
-
-  // State cho Quiz Selector
-  const [showQuizSelector, setShowQuizSelector] = useState(false);
-  const [selectedQuiz, setSelectedQuiz] = useState(null);
-
-  useEffect(() => {
-    if (open) {
-      if (initialValues) {
-        // Edit Mode
-        form.setFieldsValue({
-          ...initialValues,
-          dueDate: initialValues.dueDate ? dayjs(initialValues.dueDate) : null,
-          file: [],
-        });
-        setAssignmentType(initialValues.type === "quiz" ? "quiz" : "homework");
-
-        if (initialValues.type === "quiz" && initialValues.QuizId) {
-          setSelectedQuiz({
-            QuizId: initialValues.QuizId,
-            Title: initialValues.QuizTitle || "Đề thi đã chọn",
-          });
-        } else {
-          setSelectedQuiz(null);
-        }
-      } else {
-        // Create Mode
-        form.resetFields();
-        setAssignmentType("homework");
-        setSelectedQuiz(null);
-      }
-    }
-  }, [open, initialValues, form]);
-
-  const handleSubmit = () => {
-    form.validateFields().then((values) => {
-      // --- THAY ĐỔI: KHÔNG CÒN BẮT BUỘC CHỌN QUIZ ---
-      // Nếu user chọn type=quiz nhưng không chọn đề từ ngân hàng,
-      // hệ thống hiểu là quiz làm trên giấy/file pdf.
-
-      const submitData = {
-        ...values,
-        type: assignmentType,
-        dueDate: values.dueDate ? values.dueDate.toISOString() : null,
-        // Chỉ gửi quizId nếu đã chọn, nếu không thì null
-        quizId:
-          assignmentType === "quiz" && selectedQuiz
-            ? selectedQuiz.QuizId
-            : null,
-        file:
-          values.file && values.file.length > 0
-            ? values.file[0].originFileObj
-            : null,
-      };
-      onFinish(submitData);
-    });
-  };
-
-  const normFile = (e) => (Array.isArray(e) ? e : e?.fileList);
-
-  return (
-    <>
-      <Modal
-        title={
-          <div className="text-lg font-bold text-slate-800">
-            {initialValues ? "Cập nhật bài tập" : "Tạo bài tập mới"}
-          </div>
-        }
-        open={open}
-        onCancel={onCancel}
-        width={700}
-        footer={[
-          <Button key="cancel" onClick={onCancel}>
-            Hủy
-          </Button>,
-          <Button
-            key="submit"
-            type="primary"
-            icon={<Save size={16} />}
-            onClick={handleSubmit}
-            loading={loading}
-          >
-            Lưu
-          </Button>,
-        ]}
-        centered
-      >
-        <Form form={form} layout="vertical" className="pt-2">
-          {/* 1. CHỌN LOẠI BÀI TẬP */}
-          <Form.Item label="Loại hình đánh giá" className="mb-4">
-            <Radio.Group
-              value={assignmentType}
-              onChange={(e) => setAssignmentType(e.target.value)}
-              buttonStyle="solid"
-              className="w-full grid grid-cols-2 gap-4"
-            >
-              <Radio.Button
-                value="homework"
-                className="text-center h-12 flex items-center justify-center rounded-lg border-slate-300"
-              >
-                <div className="flex items-center gap-2">
-                  <FileText size={18} /> Tự luận / Nộp file
-                </div>
-              </Radio.Button>
-              <Radio.Button
-                value="quiz"
-                className="text-center h-12 flex items-center justify-center rounded-lg border-slate-300"
-              >
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 size={18} /> Trắc nghiệm (Quiz)
-                </div>
-              </Radio.Button>
-            </Radio.Group>
-          </Form.Item>
-
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                label="Tiêu đề"
-                name="title"
-                rules={[{ required: true, message: "Nhập tiêu đề" }]}
-              >
-                <Input size="large" placeholder="VD: Kiểm tra 15 phút..." />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                label="Hạn nộp"
-                name="dueDate"
-                rules={[{ required: true, message: "Chọn hạn nộp" }]}
-              >
-                <DatePicker
-                  showTime
-                  format="HH:mm DD/MM/YYYY"
-                  className="w-full"
-                  size="large"
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          {/* 2. KHU VỰC RIÊNG CHO TRẮC NGHIỆM (OPTIONAL) */}
-          {assignmentType === "quiz" && (
-            <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-200 mb-4 animate-in fade-in zoom-in duration-300">
-              <div className="flex justify-between items-center mb-2">
-                <span className="font-bold text-blue-800 flex items-center gap-2">
-                  <BookOpen size={16} /> Liên kết đề thi (Tùy chọn)
-                </span>
-                {selectedQuiz ? (
-                  <div className="flex items-center gap-2">
-                    <Tag
-                      color="green"
-                      className="m-0 px-2 py-0.5 text-sm flex items-center gap-1"
-                    >
-                      <CheckCircle2 size={12} /> {selectedQuiz.Title}
-                    </Tag>
-                    <Button
-                      type="text"
-                      size="small"
-                      danger
-                      icon={<XIcon size={14} />}
-                      onClick={() => setSelectedQuiz(null)}
-                    />
-                  </div>
-                ) : (
-                  <span className="text-xs text-slate-500">
-                    Chưa chọn đề nào
-                  </span>
-                )}
-              </div>
-
-              {!selectedQuiz ? (
-                <Button
-                  block
-                  type="dashed"
-                  className="border-blue-300 text-blue-500 hover:text-blue-700 hover:border-blue-500"
-                  onClick={() => setShowQuizSelector(true)}
-                >
-                  Chọn đề từ Ngân hàng câu hỏi
-                </Button>
-              ) : (
-                <div className="text-xs text-blue-600 pl-6">
-                  Học sinh sẽ làm bài trực tiếp trên hệ thống với đề thi này.
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 3. KHU VỰC UPLOAD FILE (DÙNG CHUNG CHO CẢ 2) */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 border-dashed mb-4">
-            <Form.Item
-              label={
-                <span className="flex items-center gap-2">
-                  <Paperclip size={16} /> Tài liệu đính kèm (PDF đề bài, Hình
-                  ảnh...)
-                </span>
-              }
-              name="file"
-              valuePropName="fileList"
-              getValueFromEvent={normFile}
-              className="mb-0"
-              extra="Nếu không chọn đề từ ngân hàng, hãy tải file đề bài lên đây."
-            >
-              <Upload
-                maxCount={1}
-                beforeUpload={() => false}
-                listType="picture"
-              >
-                <Button icon={<UploadIcon size={16} />} block>
-                  Tải lên tệp đính kèm
-                </Button>
-              </Upload>
-            </Form.Item>
-          </div>
-
-          <Form.Item label="Mô tả / Ghi chú" name="description">
-            <Input.TextArea rows={3} placeholder="Hướng dẫn làm bài..." />
-          </Form.Item>
-
-          <Form.Item
-            label="Trạng thái"
-            name="status"
-            initialValue="active"
-            className="mb-0"
-          >
-            <Select
-              size="large"
-              options={[
-                { value: "active", label: "Công khai ngay" },
-                { value: "draft", label: "Lưu nháp" },
-              ]}
-            />
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      <QuizSelector
-        open={showQuizSelector}
-        onCancel={() => setShowQuizSelector(false)}
-        onSelectQuiz={setSelectedQuiz}
-        courseId={courseId}
-      />
-    </>
-  );
-};
-
-// --- COMPONENT 2: DETAIL MODAL (CẬP NHẬT HIỂN THỊ) ---
-const AssignmentDetailModal = ({ open, onCancel, data }) => {
-  if (!data) return null;
-  return (
-    <Modal
-      title={null}
-      open={open}
-      onCancel={onCancel}
-      footer={null}
-      width={700}
-      centered
-    >
-      <div className="flex items-start justify-between mb-6 border-b border-slate-100 pb-4">
-        <div className="flex gap-4">
-          <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0">
-            <FileText size={24} />
-          </div>
-          <div>
-            <h3 className="text-xl font-bold text-slate-800">{data.title}</h3>
-            <div className="flex items-center gap-2 mt-1">
-              <TypeBadge type={data.type} />
-              <StatusBadge status={data.status} />
-            </div>
-          </div>
-        </div>
-      </div>
-      <Descriptions column={1} layout="vertical">
-        <Descriptions.Item label="Thời gian">
-          {dayjs(data.dueDate).format("HH:mm DD/MM/YYYY")}
-        </Descriptions.Item>
-        <Descriptions.Item label="Tiến độ">
-          <Progress
-            percent={
-              data.total > 0
-                ? Math.round((data.submitted / data.total) * 100)
-                : 0
-            }
-          />
-        </Descriptions.Item>
-
-        {data.fileUrl && (
-          <Descriptions.Item label="Tài liệu đính kèm">
-            <Button
-              type="primary"
-              ghost
-              href={data.fileUrl}
-              target="_blank"
-              icon={<Paperclip size={16} />}
-            >
-              Tải xuống tài liệu
-            </Button>
-          </Descriptions.Item>
-        )}
-
-        {/* Chỉ hiện info quiz nếu có QuizId */}
-        {data.type === "quiz" && data.quizId && (
-          <Descriptions.Item label="Đề thi trực tuyến">
-            <div className="p-3 bg-blue-50 rounded border border-blue-100 text-blue-800 text-sm flex items-center gap-2">
-              <CheckCircle2 size={16} /> Bài tập này sử dụng đề thi trắc nghiệm
-              từ hệ thống.
-            </div>
-          </Descriptions.Item>
-        )}
-
-        <Descriptions.Item label="Mô tả">
-          <div className="bg-slate-50 p-3 rounded whitespace-pre-wrap">
-            {data.description || "Không có mô tả"}
-          </div>
-        </Descriptions.Item>
-      </Descriptions>
-    </Modal>
-  );
-};
+// Import Components
+import AssignmentDetailModal from "./AssignmentsTab/AssignmentDetailModal";
+import AssignmentFormModal from "./AssignmentsTab/AssignmentFormModal";
+import SubmissionsModal from "./AssignmentsTab/SubmissionsModal";
 
 // --- HELPER COMPONENTS ---
-const TypeBadge = ({ type }) => {
-  const config =
-    type === "quiz"
-      ? { color: "blue", label: "Trắc nghiệm", icon: CheckCircle2 }
-      : { color: "purple", label: "Tự luận", icon: FileText };
-  const Icon = config.icon;
+const AssignmentTypeIcon = ({ type }) => {
+  const isQuiz = type === "quiz";
   return (
-    <Tag color={config.color} className="flex items-center gap-1">
-      <Icon size={12} /> {config.label}
-    </Tag>
+    <div
+      className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+        isQuiz ? "bg-blue-50 text-blue-600" : "bg-purple-50 text-purple-600"
+      }`}
+    >
+      {isQuiz ? <CheckCircle2 size={20} /> : <FileText size={20} />}
+    </div>
   );
 };
 
-const StatusBadge = ({ status }) => {
-  const styles = {
-    active: { color: "success", text: "Đang mở" },
-    draft: { color: "default", text: "Nháp" },
-  };
-  const style = styles[status] || styles.draft;
-  return <Tag color={style.color}>{style.text}</Tag>;
-};
-
-// --- MAIN COMPONENT ---
 const AssignmentsTab = ({ classId, courseId }) => {
   const [data, setData] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(false);
-  const [formLoading, setFormLoading] = useState(false);
+  // Đã xóa state searchTerm
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [formLoading, setFormLoading] = useState(false);
   const [viewItem, setViewItem] = useState(null);
 
+  const [isSubmissionsOpen, setIsSubmissionsOpen] = useState(false);
+  const [submissionItem, setSubmissionItem] = useState(null);
+
+  // 1. Fetch Data (Đã xóa params search)
   const fetchAssignments = useCallback(async () => {
     if (!classId) return;
     setLoading(true);
     try {
-      const res = await api.get(
-        `/assignments/class/${classId}?search=${searchTerm}`
-      );
+      const res = await api.get(`/assignments/class/${classId}`);
       setData(res.data);
     } catch (error) {
       console.error(error);
+      message.error("Không thể tải danh sách bài tập");
     } finally {
       setLoading(false);
     }
-  }, [classId, searchTerm]);
+  }, [classId]);
 
   useEffect(() => {
     fetchAssignments();
   }, [fetchAssignments]);
 
+  // --- STATS CALCULATION ---
+  const totalAssignments = data.length;
+  const activeAssignments = data.filter((d) => d.Status === "active").length;
+  const avgProgress =
+    totalAssignments > 0
+      ? Math.round(
+          (data.reduce((acc, curr) => {
+            const rate =
+              curr.TotalStudents > 0
+                ? curr.SubmittedCount / curr.TotalStudents
+                : 0;
+            return acc + rate;
+          }, 0) /
+            totalAssignments) *
+            100,
+        )
+      : 0;
+
+  // 2. Handlers
   const handleFormSubmit = async (values) => {
     setFormLoading(true);
     try {
-      // Dùng FormData để hỗ trợ file + các trường text
-      const formData = new FormData();
-      formData.append("title", values.title);
-      formData.append("description", values.description || "");
-      formData.append("dueDate", values.dueDate);
-      formData.append("type", values.type);
-      formData.append("status", values.status);
-      formData.append("classId", classId);
+      const payload = {
+        classId,
+        title: values.title,
+        description: values.description || "",
+        dueDate: values.dueDate.toISOString(),
+        type: values.type,
+        status: values.status,
+        fileUrl: values.fileUrl,
+        quizId: values.quizId,
+      };
 
-      // Nếu có quizId thì gửi (nếu user chọn)
-      if (values.quizId) {
-        formData.append("quizId", values.quizId);
-      }
-
-      // Nếu có file upload
-      if (values.file) {
-        formData.append("file", values.file);
-      }
-
-      // GỌI API (Backend dùng chung 1 endpoint POST /assignments hỗ trợ multipart)
-      if (editingItem) {
-        await api.put(`/assignments/${editingItem.id}`, formData, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-        message.success("Cập nhật thành công!");
+      if (values.type === "quiz" && values.quizId && !editingItem) {
+        await api.post("/assignments/quiz", payload);
       } else {
-        await api.post("/assignments", formData, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-        message.success("Tạo bài tập thành công!");
+        if (editingItem) {
+          await api.put(`/assignments/${editingItem.AssignmentId}`, payload);
+        } else {
+          await api.post("/assignments", payload);
+        }
       }
 
+      message.success("Lưu thành công!");
       setIsFormOpen(false);
       fetchAssignments();
     } catch (error) {
       console.error(error);
-      message.error("Có lỗi xảy ra");
+      message.error("Có lỗi xảy ra khi lưu bài tập.");
     } finally {
       setFormLoading(false);
     }
   };
 
-  const handleDelete = (record) => {
+  const handleDelete = (id) => {
     Modal.confirm({
-      title: "Xóa bài tập?",
-      okText: "Xóa",
+      title: "Xóa bài tập này?",
+      content:
+        "Hành động này không thể hoàn tác. Tất cả bài làm của học sinh cũng sẽ bị xóa.",
+      okText: "Xóa ngay",
       okType: "danger",
+      cancelText: "Hủy",
       onOk: async () => {
         try {
-          await api.delete(`/assignments/${record.id}`);
-          message.success("Đã xóa");
+          await api.delete(`/assignments/${id}`);
+          message.success("Đã xóa bài tập");
           fetchAssignments();
         } catch (e) {
-          message.error("Lỗi xóa");
+          message.error("Lỗi khi xóa bài tập");
         }
       },
     });
   };
 
+  // --- TABLE COLUMNS ---
   const columns = [
     {
-      title: "Tên bài tập",
-      key: "title",
-      render: (_, record) => (
+      title: "Bài tập",
+      key: "Title",
+      width: 350,
+      render: (_, r) => (
         <div
-          className="cursor-pointer"
+          className="flex items-start gap-3 cursor-pointer group"
           onClick={() => {
-            setViewItem(record);
+            setViewItem(r);
             setIsDetailOpen(true);
           }}
         >
-          <div className="font-bold text-slate-700">{record.title}</div>
-          <div className="flex gap-1 mt-1">
-            <TypeBadge type={record.type} />
-            <StatusBadge status={record.status} />
+          <AssignmentTypeIcon type={r.Type} />
+          <div>
+            <div className="font-semibold text-slate-800 text-base group-hover:text-blue-600 transition-colors">
+              {r.Title}
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-xs text-slate-500 uppercase font-bold tracking-wider">
+                {r.Type === "quiz" ? "Trắc nghiệm" : "Tự luận"}
+              </span>
+              {r.Status === "draft" && (
+                <Tag
+                  bordered={false}
+                  className="text-xs bg-slate-100 text-slate-500 m-0"
+                >
+                  Nháp
+                </Tag>
+              )}
+            </div>
           </div>
         </div>
       ),
     },
     {
       title: "Hạn nộp",
-      render: (_, r) => (
-        <div className="text-slate-600">
-          {dayjs(r.dueDate).format("HH:mm DD/MM")}
-        </div>
-      ),
+      dataIndex: "DueDate",
+      width: 200,
+      render: (d) => {
+        const date = dayjs(d);
+        const isExpired = date.isBefore(dayjs());
+        return (
+          <div
+            className={`flex items-center gap-2 ${
+              isExpired ? "text-red-500" : "text-slate-600"
+            }`}
+          >
+            <Calendar size={16} />
+            <div className="flex flex-col">
+              <span className="font-medium text-sm">
+                {date.format("HH:mm, DD/MM")}
+              </span>
+              {isExpired && (
+                <span className="text-[10px] font-bold uppercase bg-red-50 px-1 rounded w-fit">
+                  Đã kết thúc
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      },
     },
     {
-      title: "Tiến độ",
-      render: (_, r) => (
-        <Progress
-          percent={r.total > 0 ? Math.round((r.submitted / r.total) * 100) : 0}
-          size="small"
-        />
-      ),
+      title: "Tiến độ nộp bài",
+      key: "Progress",
+      render: (_, r) => {
+        const percent =
+          r.TotalStudents > 0
+            ? Math.round((r.SubmittedCount / r.TotalStudents) * 100)
+            : 0;
+        return (
+          <div className="w-full max-w-[180px]">
+            <div className="flex justify-between text-xs mb-1 text-slate-500">
+              <span>
+                Đã nộp: <b>{r.SubmittedCount}</b>/{r.TotalStudents}
+              </span>
+              <span className="font-bold">{percent}%</span>
+            </div>
+            <Progress
+              percent={percent}
+              size="small"
+              showInfo={false}
+              strokeColor={percent === 100 ? "#10b981" : "#3b82f6"}
+              trailColor="#f1f5f9"
+            />
+          </div>
+        );
+      },
     },
     {
-      title: "",
+      title: "Thao tác",
+      align: "right",
+      width: 140, // Tăng width để chứa đủ nút
       render: (_, r) => (
-        <div className="flex gap-2 justify-end">
-          <Button
-            size="small"
-            icon={<Pencil size={14} />}
-            onClick={() => {
-              setEditingItem(r);
-              setIsFormOpen(true);
-            }}
-          />
-          <Button
-            size="small"
-            danger
-            icon={<Trash2 size={14} />}
-            onClick={() => handleDelete(r)}
-          />
+        <div className="flex justify-end gap-1">
+          {/* NÚT MỚI: XEM DANH SÁCH NỘP BÀI */}
+          <Tooltip title="Danh sách nộp bài & Chấm điểm">
+            <Button
+              type="text"
+              icon={<Users size={16} />}
+              className="text-slate-400 hover:text-green-600 hover:bg-green-50"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSubmissionItem(r);
+                setIsSubmissionsOpen(true);
+              }}
+            />
+          </Tooltip>
+
+          <Tooltip title="Chỉnh sửa">
+            <Button
+              type="text"
+              icon={<Pencil size={16} />}
+              className="text-slate-400 hover:text-blue-600 hover:bg-blue-50"
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditingItem(r);
+                setIsFormOpen(true);
+              }}
+            />
+          </Tooltip>
+          <Tooltip title="Xóa">
+            <Button
+              type="text"
+              danger
+              icon={<Trash2 size={16} />}
+              className="text-slate-400 hover:text-red-600 hover:bg-red-50"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDelete(r.AssignmentId);
+              }}
+            />
+          </Tooltip>
         </div>
       ),
     },
   ];
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between">
-        <Input
-          prefix={<Search size={16} className="text-gray-400" />}
-          placeholder="Tìm kiếm..."
-          className="w-64 rounded-lg"
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
-        <Button
-          type="primary"
-          icon={<Plus size={16} />}
-          className="bg-blue-600"
-          onClick={() => {
-            setEditingItem(null);
-            setIsFormOpen(true);
-          }}
-        >
-          Tạo mới
-        </Button>
+    <div className="max-w-7xl mx-auto space-y-6">
+      {/* 1. STATS CARDS */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">
+              Tổng bài tập
+            </p>
+            <h3 className="text-2xl font-bold text-slate-800">
+              {totalAssignments}
+            </h3>
+          </div>
+          <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
+            <FileText size={24} />
+          </div>
+        </div>
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">
+              Đang mở (Active)
+            </p>
+            <h3 className="text-2xl font-bold text-emerald-600">
+              {activeAssignments}
+            </h3>
+          </div>
+          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg">
+            <Clock size={24} />
+          </div>
+        </div>
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">
+              Tỉ lệ nộp bài
+            </p>
+            <h3 className="text-2xl font-bold text-purple-600">
+              {avgProgress}%
+            </h3>
+          </div>
+          <div className="p-3 bg-purple-50 text-purple-600 rounded-lg">
+            <BarChart3 size={24} />
+          </div>
+        </div>
       </div>
 
-      <Table
-        columns={columns}
-        dataSource={data}
-        rowKey="id"
-        loading={loading}
-        pagination={{ pageSize: 5 }}
-        className="custom-table"
-      />
+      {/* 2. MAIN CONTENT CARD */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* Toolbar Header (Đã xóa Input Search) */}
+        <div className="px-6 py-5 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white">
+          <div className="flex flex-col gap-1">
+            <h3 className="text-lg font-bold text-slate-800">
+              Danh sách bài tập
+            </h3>
+            <p className="text-sm text-slate-500">
+              Quản lý bài tập về nhà và bài kiểm tra
+            </p>
+          </div>
 
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            {/* Nút Tạo mới */}
+            <Button
+              type="primary"
+              icon={<Plus size={18} />}
+              onClick={() => {
+                setEditingItem(null);
+                setIsFormOpen(true);
+              }}
+              className="h-10 px-5 bg-blue-600 hover:bg-blue-500 border-none shadow-md font-medium rounded-lg flex items-center"
+            >
+              Tạo mới
+            </Button>
+          </div>
+        </div>
+
+        {/* Table Content */}
+        <Table
+          columns={columns}
+          dataSource={data}
+          rowKey="AssignmentId"
+          loading={loading}
+          pagination={{
+            pageSize: 5,
+            showTotal: (total) => (
+              <span className="text-slate-500">
+                Tổng <b>{total}</b> bài tập
+              </span>
+            ),
+          }}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={
+                  <div className="flex flex-col items-center gap-2">
+                    <span className="text-slate-500">Chưa có bài tập nào.</span>
+                    <Button type="dashed" onClick={() => setIsFormOpen(true)}>
+                      Tạo bài tập đầu tiên
+                    </Button>
+                  </div>
+                }
+              />
+            ),
+          }}
+          className="custom-table"
+        />
+      </div>
+
+      {/* --- MODALS --- */}
       <AssignmentFormModal
         open={isFormOpen}
         onCancel={() => setIsFormOpen(false)}
@@ -666,16 +406,35 @@ const AssignmentsTab = ({ classId, courseId }) => {
         loading={formLoading}
         courseId={courseId}
       />
-
+      <SubmissionsModal
+        open={isSubmissionsOpen}
+        onCancel={() => setIsSubmissionsOpen(false)}
+        assignment={submissionItem}
+      />
       <AssignmentDetailModal
         open={isDetailOpen}
         onCancel={() => setIsDetailOpen(false)}
         data={viewItem}
       />
 
+      {/* CSS Override cho Table Header đẹp hơn */}
       <style>{`
-        .custom-table .ant-table-thead > tr > th { background: #f8fafc; color: #64748b; font-weight: 600; font-size: 13px; text-transform: uppercase; }
-        .custom-table .ant-table-tbody > tr:hover > td { background: #f8fafc !important; }
+        .custom-table .ant-table-thead > tr > th {
+          background: #f8fafc !important;
+          color: #64748b !important;
+          font-weight: 600 !important;
+          font-size: 13px !important;
+          text-transform: uppercase !important;
+          padding-top: 16px !important;
+          padding-bottom: 16px !important;
+        }
+        .custom-table .ant-table-tbody > tr > td {
+          padding-top: 16px !important;
+          padding-bottom: 16px !important;
+        }
+        .custom-table .ant-table-tbody > tr:hover > td {
+          background: #f8fafc !important;
+        }
       `}</style>
     </div>
   );

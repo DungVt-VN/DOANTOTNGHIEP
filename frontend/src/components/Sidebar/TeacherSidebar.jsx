@@ -12,6 +12,8 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import { AuthContext } from "@/context/authContext";
+import SchoolIcon from "@mui/icons-material/School";
+
 import TeacherProfileModal from "../UserManagement/User/TeacherProfileModal";
 
 // --- COMPONENT ITEM CON ---
@@ -132,12 +134,12 @@ const TeacherSidebar = () => {
             }`}
           >
             <div className="bg-blue-600 p-1.5 rounded-lg shadow-lg shadow-blue-500/30 flex-shrink-0">
-              <LayoutDashboard size={20} className="text-white" />
+              <SchoolIcon  size={20} className="text-white" />
             </div>
 
             {!isCollapsed && (
               <span className="text-xl font-bold text-white tracking-wide whitespace-nowrap opacity-100 transition-opacity duration-300">
-                Edu<span className="text-blue-400">Teacher</span>
+                Edu<span className="text-blue-400">Center</span>
               </span>
             )}
           </div>

@@ -50,6 +50,7 @@ export const changePassword = (req, res) => {
     return res.status(200).json("Đổi mật khẩu thành công!");
   });
 };
+
 export const updateEmail = (req, res) => {
   const userId = req.body.UserId;
   const { Email } = req.body;
@@ -81,9 +82,10 @@ export const updateEmail = (req, res) => {
     });
   });
 };
-export const updateInfoStudent = (req, res) => {
-  const userId = req.params.userId;
+export const updateInfoStudent = async (req, res) => {
+  const { userId } = req.params;
 
+  // Lấy thêm Email từ body
   const {
     FullName,
     PhoneNo,
@@ -91,81 +93,104 @@ export const updateInfoStudent = (req, res) => {
     SchoolName,
     StudentCode,
     BirthDate,
+    Email, // <--- Trường mới cần update
   } = req.body;
 
   if (!userId) return res.status(400).json("Thiếu User ID.");
   if (!FullName) return res.status(400).json("Tên đầy đủ là bắt buộc.");
 
-  const qUpdateStudent = `
-    UPDATE Students 
-    SET FullName = ?, PhoneNo = ?, ParentPhoneNo = ?, SchoolName = ?, StudentCode = ?, BirthDate = ?
-    WHERE UserId = ?
-  `;
-
-  const studentValues = [
-    FullName,
-    PhoneNo,
-    ParentPhoneNo,
-    SchoolName,
-    StudentCode,
-    BirthDate,
-    userId,
-  ];
-
-  db.query(qUpdateStudent, studentValues, (err, result) => {
-    if (err) {
-      if (err.code === "ER_DUP_ENTRY")
-        return res.status(409).json("Mã sinh viên đã tồn tại.");
-      return res.status(500).json("Lỗi Server khi cập nhật hồ sơ.");
+  try {
+    // =========================================================
+    // BƯỚC 1: Cập nhật Email trong bảng Users (nếu có gửi lên)
+    // =========================================================
+    if (Email) {
+      try {
+        const qUpdateUser = "UPDATE Users SET Email = ? WHERE UserId = ?";
+        await query(qUpdateUser, [Email, userId]);
+      } catch (err) {
+        // Bắt lỗi trùng Email (nếu Email đã được người khác sử dụng)
+        if (err.code === "ER_DUP_ENTRY") {
+          return res
+            .status(409)
+            .json("Email này đã được sử dụng bởi tài khoản khác.");
+        }
+        throw err; // Ném lỗi ra để catch tổng bên dưới xử lý
+      }
     }
 
-    // Trường hợp 1: Update thành công
-    if (result.affectedRows > 0) {
-      return res.status(200).json("Cập nhật hồ sơ học viên thành công!");
+    // =========================================================
+    // BƯỚC 2: Cập nhật thông tin trong bảng Students
+    // =========================================================
+    const qUpdateStudent = `
+      UPDATE Students 
+      SET FullName = ?, PhoneNo = ?, ParentPhoneNo = ?, SchoolName = ?, StudentCode = ?, BirthDate = ?
+      WHERE UserId = ?
+    `;
+
+    const studentValues = [
+      FullName,
+      PhoneNo,
+      ParentPhoneNo,
+      SchoolName,
+      StudentCode,
+      BirthDate,
+      userId,
+    ];
+
+    const updateResult = await query(qUpdateStudent, studentValues);
+
+    // Nếu update thành công (có dòng bị ảnh hưởng), trả về luôn
+    if (updateResult.affectedRows > 0) {
+      return res.status(200).json("Cập nhật hồ sơ thành công!");
     }
 
-    // Trường hợp 2: Chưa có hồ sơ hoặc dữ liệu không đổi
-    db.query(
+    // =========================================================
+    // BƯỚC 3: Xử lý trường hợp Update không thay đổi dòng nào
+    // (Có thể do dữ liệu y hệt cũ, hoặc chưa có hồ sơ)
+    // =========================================================
+
+    // Kiểm tra xem đã có hồ sơ chưa
+    const checkRes = await query(
       "SELECT UserId FROM Students WHERE UserId = ?",
       [userId],
-      (checkErr, checkRes) => {
-        if (checkErr) return res.status(500).json("Lỗi kiểm tra hồ sơ.");
-
-        // Nếu đã có hồ sơ -> Không đổi gì
-        if (checkRes.length > 0) {
-          return res
-            .status(200)
-            .json("Thông tin đã được lưu (Không có thay đổi mới).");
-        }
-
-        // Nếu chưa có hồ sơ -> Tạo mới
-        const qInsertStudent = `
-        INSERT INTO Students (UserId, FullName, PhoneNo, ParentPhoneNo, SchoolName, StudentCode, BirthDate)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `;
-        const insertValues = [
-          userId,
-          FullName,
-          PhoneNo,
-          ParentPhoneNo,
-          SchoolName,
-          StudentCode,
-          BirthDate,
-        ];
-
-        db.query(qInsertStudent, insertValues, (insertErr) => {
-          if (insertErr) {
-            if (insertErr.code === "ER_DUP_ENTRY") {
-              if (insertErr.sqlMessage?.includes("StudentCode"))
-                return res.status(409).json("Mã sinh viên đã tồn tại.");
-            }
-            return res.status(500).json("Lỗi Server khi tạo mới hồ sơ.");
-          }
-          return res.status(201).json("Đã tạo mới hồ sơ học viên thành công!");
-        });
-      }
     );
-  });
+
+    // 3a. Đã có hồ sơ -> Nghĩa là dữ liệu gửi lên y hệt dữ liệu cũ
+    if (checkRes.length > 0) {
+      return res
+        .status(200)
+        .json(
+          "Thông tin đã được lưu (Email đã cập nhật, thông tin khác không đổi).",
+        );
+    }
+
+    // 3b. Chưa có hồ sơ -> Thực hiện INSERT mới (Tạo hồ sơ lần đầu)
+    const qInsertStudent = `
+      INSERT INTO Students (UserId, FullName, PhoneNo, ParentPhoneNo, SchoolName, StudentCode, BirthDate)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `;
+
+    const insertValues = [
+      userId,
+      FullName,
+      PhoneNo,
+      ParentPhoneNo,
+      SchoolName,
+      StudentCode,
+      BirthDate,
+    ];
+
+    await query(qInsertStudent, insertValues);
+
+    return res.status(201).json("Đã tạo mới hồ sơ học viên thành công!");
+  } catch (err) {
+    console.error("Lỗi updateInfoStudent:", err);
+    // Bắt lỗi trùng StudentCode khi Insert hoặc Update
+    if (err.code === "ER_DUP_ENTRY") {
+      return res.status(409).json("Mã sinh viên (Student Code) đã tồn tại.");
+    }
+    return res.status(500).json("Lỗi Server khi cập nhật hồ sơ.");
+  }
 };
 
 export const updateInfoTeacher = (req, res) => {
@@ -246,7 +271,7 @@ export const updateInfoTeacher = (req, res) => {
           }
           return res.status(201).json("Đã tạo mới hồ sơ giáo viên thành công!");
         });
-      }
+      },
     );
   });
 };
@@ -322,7 +347,7 @@ export const importTeachersFromExcel = async (req, res) => {
         // Insert User (Role = Teacher)
         const userRes = await queryAsync(
           "INSERT INTO Users (UserName, Email, Password, Role) VALUES (?, ?, ?, 'Teacher')",
-          [UserName, Email, hashed]
+          [UserName, Email, hashed],
         );
         createdUserId = userRes.insertId;
 
@@ -337,7 +362,7 @@ export const importTeachersFromExcel = async (req, res) => {
             Address || null,
             Bio || null,
             SalaryRate || 0,
-          ]
+          ],
         );
 
         successes.push({ UserName });
@@ -411,6 +436,7 @@ export const getAccountStudents = (req, res) => {
 };
 export const getTeacherDetail = (req, res) => {
   const teacherId = req.params.id;
+
   const q = `
     SELECT 
       t.*, 
@@ -426,6 +452,33 @@ export const getTeacherDetail = (req, res) => {
     if (err) return res.status(500).json(err);
     if (data.length === 0)
       return res.status(404).json("Không tìm thấy giáo viên");
+
+    return res.status(200).json(data[0]);
+  });
+};
+
+export const getStudentDetail = (req, res) => {
+  const { studentId, userId } = req.params;
+  const q = `
+    SELECT 
+      s.*, 
+      u.UserName, 
+      u.Email, 
+      u.Avatar,
+      u.Role
+    FROM Students s
+    JOIN Users u ON s.UserId = u.UserId
+    WHERE s.StudentId = ? AND u.UserId = ?
+  `;
+
+  // Truyền cả 2 tham số vào query
+  db.query(q, [studentId, userId], (err, data) => {
+    if (err) return res.status(500).json(err);
+
+    if (data.length === 0)
+      return res
+        .status(404)
+        .json("Không tìm thấy thông tin học viên khớp với tài khoản này.");
 
     return res.status(200).json(data[0]);
   });
@@ -529,14 +582,14 @@ export const addStudentAccount = async (req, res) => {
       try {
         if (!UserName || !Email || !Password || !FullName) {
           throw new Error(
-            "Thiếu thông tin bắt buộc (UserName, Email, Password, FullName)"
+            "Thiếu thông tin bắt buộc (UserName, Email, Password, FullName)",
           );
         }
 
         const isExist = await checkUniqueFields(UserName, Email);
         if (isExist) {
           throw new Error(
-            `UserName '${UserName}' hoặc Email '${Email}' đã tồn tại.`
+            `UserName '${UserName}' hoặc Email '${Email}' đã tồn tại.`,
           );
         }
 
@@ -576,12 +629,12 @@ export const addStudentAccount = async (req, res) => {
               createdUserId,
             ]);
             console.log(
-              `[ROLLBACK] Đã xóa User ID ${createdUserId} do lỗi tạo Student Profile.`
+              `[ROLLBACK] Đã xóa User ID ${createdUserId} do lỗi tạo Student Profile.`,
             );
           } catch (deleteErr) {
             console.error(
               `[FATAL] Không thể rollback User ID ${createdUserId}:`,
-              deleteErr
+              deleteErr,
             );
           }
         }
@@ -698,7 +751,7 @@ export const importStudentsFromExcel = async (req, res) => {
 
         const userRes = await queryAsync(
           "INSERT INTO Users (UserName, Email, Password, Role) VALUES (?,?,?, 'Student')",
-          [UserName, Email, hashed]
+          [UserName, Email, hashed],
         );
         createdUserId = userRes.insertId;
 
@@ -711,7 +764,7 @@ export const importStudentsFromExcel = async (req, res) => {
             SchoolName || null,
             PhoneNo || null,
             BirthDate || null,
-          ]
+          ],
         );
 
         successes.push({ UserName });
@@ -759,7 +812,7 @@ export const createStudent = async (req, res) => {
     return res
       .status(400)
       .json(
-        "Vui lòng điền đủ các trường bắt buộc (Tài khoản, Email, Mật khẩu, Họ tên)."
+        "Vui lòng điền đủ các trường bắt buộc (Tài khoản, Email, Mật khẩu, Họ tên).",
       );
   }
 
@@ -831,7 +884,7 @@ export const createTeacher = async (req, res) => {
     return res
       .status(400)
       .json(
-        "Thiếu thông tin bắt buộc (Tài khoản, Email, Pass, Họ tên, Mã GV)."
+        "Thiếu thông tin bắt buộc (Tài khoản, Email, Pass, Họ tên, Mã GV).",
       );
   }
 
@@ -893,7 +946,7 @@ export const getAvailableTeachers = async (req, res) => {
 
     // 1. Lấy tất cả giáo viên
     const allTeachers = await queryAsync(
-      "SELECT TeacherId, FullName, TeacherCode FROM Teachers"
+      "SELECT TeacherId, FullName, TeacherCode FROM Teachers",
     );
 
     // 2. Tìm các lớp học CÓ THỂ gây xung đột (trùng ngày tháng và giờ)
@@ -927,7 +980,7 @@ export const getAvailableTeachers = async (req, res) => {
 
       // Kiểm tra xem có ngày nào trùng nhau không (Intersection)
       const hasOverlapDay = reqDays.some((day) =>
-        classDays.includes(day.toString())
+        classDays.includes(day.toString()),
       );
 
       if (hasOverlapDay) {
@@ -937,7 +990,7 @@ export const getAvailableTeachers = async (req, res) => {
 
     // 4. Trả về danh sách giáo viên KHÔNG nằm trong busyTeacherIds
     const availableTeachers = allTeachers.filter(
-      (t) => !busyTeacherIds.has(t.TeacherId)
+      (t) => !busyTeacherIds.has(t.TeacherId),
     );
 
     return res.status(200).json(availableTeachers);

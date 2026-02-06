@@ -7,8 +7,11 @@ import {
   deleteAssignment,
   submitAssignment,
   // --- IMPORT MỚI ---
-  getQuestionBank,
   createQuizAssignment,
+  gradeSubmission,
+  getSubmissionsByAssignment,
+  getAssignmentSubmissionDetail,
+  getAssignmentsByClassStudent,
 } from "../controllers/Course/assignmentController.js";
 import { authorize } from "../middlewares/authorize.js";
 
@@ -20,6 +23,7 @@ const upload = multer({ dest: "uploads/" });
 // ==================== COMMON ROUTES ====================
 // Lấy danh sách bài tập của lớp
 router.get("/class/:classId", authorize, getAssignmentsByClass);
+router.get("/class/student/:classId", authorize, getAssignmentsByClassStudent);
 
 // ==================== TEACHER ROUTES ====================
 
@@ -31,7 +35,6 @@ router.delete("/:assignmentId", authorize, deleteAssignment);
 // --- 2. Quản lý Bài kiểm tra (Quiz - MS Teams Style) ---
 // Lấy danh sách câu hỏi từ ngân hàng (có filter: courseId, difficulty, search)
 // URL: /api/assignments/questions?courseId=1&difficulty=Medium
-router.get("/questions", authorize, getQuestionBank);
 
 // Tạo bài tập dạng Quiz (Chọn câu hỏi từ ngân hàng)
 router.post("/quiz", authorize, createQuizAssignment);
@@ -39,5 +42,12 @@ router.post("/quiz", authorize, createQuizAssignment);
 // ==================== STUDENT ROUTES ====================
 // Học sinh nộp bài (Upload file)
 router.post("/submit", authorize, upload.single("file"), submitAssignment);
+router.put("/submissions/:submissionId/grade", authorize, gradeSubmission);
+router.get("/:assignmentId/submissions", authorize, getSubmissionsByAssignment);
+router.get(
+  "/submission/:assignmentId",
+  authorize,
+  getAssignmentSubmissionDetail,
+);
 
 export default router;

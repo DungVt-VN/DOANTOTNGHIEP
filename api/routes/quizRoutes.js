@@ -9,7 +9,12 @@ import {
   deleteQuiz,
   updateQuiz,
   updateQuizQuestions,
-  updateQuizDistribute, // Import hàm phân phối mới
+  updateQuizDistribute,
+  submitQuiz2,
+  saveSingleAnswer,
+  getQuizDetail,
+  getQuizResultDetail,
+  getQuizzesByClass, // Import hàm phân phối mới
 } from "../controllers/Course/quizController.js";
 import { authorize } from "../middlewares/authorize.js";
 
@@ -25,7 +30,7 @@ router.post("/", authorize, addQuiz);
 // - Lấy Master: /api/quizzes?courseId=1&type=master
 // - Lấy theo lớp: /api/quizzes?classId=10
 router.get("/", authorize, getQuizzes);
-
+router.get("/class/:classId", getQuizzesByClass);
 // 3. Phân phối đề thi Master xuống một lớp cụ thể
 // Route này sẽ clone đề gốc và gán thời gian bắt đầu/kết thúc riêng cho lớp
 router.post("/:masterQuizId/distribute", authorize, distributeQuizToClass);
@@ -48,4 +53,8 @@ router.delete("/:quizId", deleteQuiz);
 // Route cập nhật
 router.put("/:quizId", updateQuiz);
 
+router.get("/detail/:quizId/:userId", getQuizDetail);
+router.post("/save-answer", saveSingleAnswer);
+router.post("/submit2", submitQuiz2);
+router.get("/results/:resultId/detail", getQuizResultDetail);
 export default router;

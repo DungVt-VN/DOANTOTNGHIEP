@@ -17,6 +17,7 @@ import {
   getAvailableTeachers,
   getTeacherDetail,
   changePassword,
+  getStudentDetail,
 } from "../controllers/User/userController.js";
 import { authorize } from "../middlewares/authorize.js";
 import { authorizeRole } from "../middlewares/authorizeRole.js";
@@ -35,39 +36,39 @@ router.get(
   "/manage-accounts/students",
   authorize,
   authorizeRole("Admin"),
-  getAccountStudents
+  getAccountStudents,
 );
 
-router.post("/", authorize, authorizeRole("Admin"), addStudentAccount); // Cân nhắc đổi path này rõ ràng hơn nếu có thể
+router.post("/", authorize, authorizeRole("Admin"), addStudentAccount);
 
 router.post(
   "/create/student",
   authorize,
   authorizeRole("Admin"),
-  createStudent
+  createStudent,
 );
 
-router.put("/update-info/student/:userId", authorize, updateInfoStudent);
+router.put("/update-info/student/", authorize, updateInfoStudent);
 
 router.post(
   "/import-excel",
   upload.single("file"),
   authorize,
   authorizeRole("Admin"),
-  importStudentsFromExcel
+  importStudentsFromExcel,
 );
 router.get(
   "/manage-accounts/teachers",
   authorize,
   authorizeRole("Admin"),
-  getAccountTeachers
+  getAccountTeachers,
 );
 
 router.post(
   "/create/teacher",
   authorize,
   authorizeRole("Admin"),
-  createTeacher
+  createTeacher,
 );
 
 router.put("/update-info/teacher/:userId", authorize, updateInfoTeacher);
@@ -77,7 +78,7 @@ router.post(
   upload.single("file"),
   authorize,
   authorizeRole("Admin"),
-  importTeachersFromExcel
+  importTeachersFromExcel,
 );
 
 router.post("/teachers/check-availability", authorize, getAvailableTeachers);
@@ -86,7 +87,14 @@ router.get(
   "/teacher/:id",
   authorize,
   authorizeRole("Teacher"),
-  getTeacherDetail
+  getTeacherDetail,
+);
+
+router.get(
+  "/student/:studentId/:userId",
+  authorize,
+  authorizeRole("Student"),
+  getStudentDetail,
 );
 
 export default router;

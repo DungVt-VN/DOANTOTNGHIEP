@@ -114,13 +114,13 @@ export const getAllChapters = async (req, res) => {
     const result = chapters.map((chapter) => {
       // 4.1. Lọc các bài học thuộc chương hiện tại
       const chapterLessons = lessons.filter(
-        (l) => l.ChapterId === chapter.CourseChapterId
+        (l) => l.ChapterId === chapter.CourseChapterId,
       );
 
       // 4.2. Với mỗi bài học, lọc tài liệu tương ứng
       const lessonsWithMaterials = chapterLessons.map((lesson) => {
         const lessonMaterials = materials.filter(
-          (m) => m.LessonId === lesson.LessonId
+          (m) => m.LessonId === lesson.LessonId,
         );
 
         return {
@@ -153,15 +153,23 @@ export const getAllChapters = async (req, res) => {
 // ==================================================================
 export const getChapterById = async (req, res) => {
   const chapterId = req.params.chapterId;
-  const q = "SELECT * FROM Chapters WHERE ChapterId = ?";
+
+  // Sửa lại tên bảng và tên cột khóa chính cho đúng DB
+  const q = "SELECT * FROM CourseChapters WHERE CourseChapterId = ?";
 
   try {
     const data = await query(q, [chapterId]);
-    if (data.length === 0)
+
+    if (data.length === 0) {
       return res.status(404).json({ error: "Chapter not found" });
+    }
+
     return res.status(200).json(data[0]);
   } catch (err) {
-    return res.status(500).json(err);
+    console.error("Get Chapter Error:", err);
+    return res
+      .status(500)
+      .json({ error: "Lỗi server khi lấy thông tin chương." });
   }
 };
 
@@ -171,14 +179,12 @@ export const getChapterById = async (req, res) => {
 // Body: { title, description, classId, orderIndex }
 // ==================================================================
 export const createChapter = async (req, res) => {
+  // Chuẩn hóa đầu vào (chấp nhận cả viết hoa và viết thường)
   const title = req.body.title || req.body.Title;
   const description = req.body.description || req.body.Description;
   const classId = req.body.classId || req.body.ClassId;
-  const orderIndex =
-    req.body.orderIndex !== undefined
-      ? req.body.orderIndex
-      : req.body.OrderIndex;
 
+  // Validate dữ liệu bắt buộc
   if (!classId || !title) {
     return res
       .status(400)
@@ -186,50 +192,29 @@ export const createChapter = async (req, res) => {
   }
 
   try {
-    if (orderIndex !== undefined && orderIndex !== null && orderIndex !== "") {
-      const qShift = `
-        UPDATE Chapters 
-        SET OrderIndex = OrderIndex + 1 
-        WHERE ClassId = ? AND OrderIndex >= ?
-      `;
-      await query(qShift, [classId, orderIndex]);
+    // CÂU LỆNH TỐI ƯU:
+    // 1. Insert vào bảng CourseChapters
+    // 2. Cột OrderIndex được tính toán tự động bằng cách lấy (MAX hiện tại + 1)
+    // 3. Sử dụng COALESCE để xử lý trường hợp lớp chưa có chương nào (MAX = null -> 0)
+    // 4. Alias 'cc' trong subquery để tránh lỗi "You can't specify target table for update in FROM clause"
 
-      const qInsert = `INSERT INTO Chapters (ClassId, Title, Description, OrderIndex) VALUES (?, ?, ?, ?)`;
-      const result = await query(qInsert, [
-        classId,
-        title,
-        description,
-        orderIndex,
-      ]);
+    const q = `
+      INSERT INTO CourseChapters (ClassId, Title, Description, OrderIndex)
+      SELECT ?, ?, ?, (SELECT COALESCE(MAX(cc.OrderIndex), 0) + 1 FROM CourseChapters cc WHERE cc.ClassId = ?)
+    `;
 
-      return res.status(201).json({
-        message: "Chapter created (Manual)",
-        chapterId: result.insertId,
-        OrderIndex: orderIndex,
-        Title: title,
-      });
-    } else {
-      const qAtomicInsert = `
-        INSERT INTO Chapters (ClassId, Title, Description, OrderIndex)
-        SELECT ?, ?, ?, COALESCE((SELECT MAX(OrderIndex) FROM Chapters WHERE ClassId = ?), 0) + 1
-        FROM Classes
-        WHERE ClassId = ?
-      `;
+    // Tham số: [classId, title, description, classId]
+    // classId xuất hiện 2 lần: 1 lần để insert, 1 lần để lọc trong subquery tính MAX
+    const result = await query(q, [classId, title, description, classId]);
 
-      const result = await query(qAtomicInsert, [
-        classId,
-        title,
-        description,
-        classId,
-        classId,
-      ]);
-
-      return res.status(201).json({
-        message: "Chapter created (Auto)",
-        chapterId: result.insertId,
-        Title: title,
-      });
-    }
+    // Trả về kết quả
+    return res.status(201).json({
+      message: "Tạo chương thành công.",
+      CourseChapterId: result.insertId, // Trả về ID vừa tạo
+      Title: title,
+      // Lưu ý: Chúng ta không query lại OrderIndex để tối ưu,
+      // Frontend có thể tự hiểu là nó nằm cuối hoặc reload lại danh sách.
+    });
   } catch (err) {
     console.error("Create Chapter Error:", err);
     return res.status(500).json({ error: "Lỗi server khi tạo chương." });
@@ -244,6 +229,7 @@ export const updateChapter = async (req, res) => {
   const chapterId = req.params.chapterId;
   const { title, description, Title, Description } = req.body;
 
+  // Hỗ trợ nhận cả viết hoa và viết thường từ Frontend
   const finalTitle = title || Title;
   const finalDesc = description || Description;
 
@@ -254,39 +240,72 @@ export const updateChapter = async (req, res) => {
     fields.push("`Title` = ?");
     values.push(finalTitle);
   }
+  // Cho phép update Description thành chuỗi rỗng (nếu muốn xóa mô tả) nên check undefined
   if (finalDesc !== undefined) {
     fields.push("`Description` = ?");
     values.push(finalDesc);
   }
 
   if (fields.length === 0)
-    return res.status(400).json({ message: "No data to update" });
+    return res.status(400).json({ message: "Không có dữ liệu để cập nhật" });
 
+  // Đẩy ID vào cuối mảng values để khớp với dấu ? ở WHERE
   values.push(chapterId);
-  const q = `UPDATE Chapters SET ${fields.join(", ")} WHERE ChapterId = ?`;
+
+  // SỬA: Tên bảng là CourseChapters và khóa chính là CourseChapterId
+  const q = `UPDATE CourseChapters SET ${fields.join(", ")} WHERE CourseChapterId = ?`;
 
   try {
-    await query(q, values);
-    return res.json({ message: "Chapter updated" });
+    const result = await query(q, values);
+
+    // Kiểm tra xem có bản ghi nào bị ảnh hưởng không (nếu ID sai thì affectedRows = 0)
+    if (result.affectedRows === 0) {
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy chương để cập nhật." });
+    }
+
+    return res.json({ message: "Cập nhật chương thành công." });
   } catch (err) {
-    return res.status(500).json(err);
+    console.error("Update Chapter Error:", err);
+    return res.status(500).json({ error: "Lỗi server khi cập nhật chương." });
   }
 };
-
 // ==================================================================
 // 5. XÓA CHƯƠNG
 // Route: DELETE /api/chapters/:chapterId
 // ==================================================================
 export const deleteChapter = async (req, res) => {
   const chapterId = req.params.chapterId;
-  const q = "DELETE FROM Chapters WHERE ChapterId = ?";
-
   try {
-    const result = await query(q, [chapterId]);
-    if (result.affectedRows === 0)
+    // 1. Bắt đầu Transaction
+    await query("START TRANSACTION");
+
+    // 2. Xóa tất cả bài học thuộc chương này trước
+    const qDeleteLessons = "DELETE FROM Lessons WHERE ChapterId = ?";
+    await query(qDeleteLessons, [chapterId]);
+
+    // 3. Sau đó xóa chương
+    const qDeleteChapter =
+      "DELETE FROM CourseChapters WHERE CourseChapterId = ?";
+    const result = await query(qDeleteChapter, [chapterId]);
+
+    // Kiểm tra nếu không tìm thấy chương để xóa
+    if (result.affectedRows === 0) {
+      await query("ROLLBACK"); // Hoàn tác nếu lỗi logic
       return res.status(404).json({ message: "Chapter not found" });
-    return res.json({ message: "Chapter deleted" });
+    }
+
+    // 4. Xác nhận Transaction (Lưu thay đổi)
+    await query("COMMIT");
+
+    return res.json({
+      message: "Chapter and related lessons deleted successfully",
+    });
   } catch (err) {
+    // 5. Nếu có lỗi, hoàn tác mọi thay đổi
+    await query("ROLLBACK");
+    console.error("Delete Chapter Error:", err);
     return res.status(500).json(err);
   }
 };
@@ -296,22 +315,32 @@ export const deleteChapter = async (req, res) => {
 // Route: PUT /api/chapters/reorder
 // ==================================================================
 export const updateChapterOrder = async (req, res) => {
+  // chapterOrder là mảng chứa các CourseChapterId theo thứ tự mới. VD: [5, 2, 8, 1]
   const { chapterOrder } = req.body;
 
   if (!Array.isArray(chapterOrder))
-    return res.status(400).json({ error: "Invalid format" });
+    return res
+      .status(400)
+      .json({ error: "Định dạng không hợp lệ. Cần một mảng các ID." });
 
   try {
-    const promises = chapterOrder.map((chapterId, index) => {
-      const q = "UPDATE Chapters SET OrderIndex = ? WHERE ChapterId = ?";
-      return query(q, [index + 1, chapterId]);
+    // Tạo mảng các Promise để update từng dòng
+    const promises = chapterOrder.map((courseChapterId, index) => {
+      // SỬA: Tên bảng là CourseChapters và khóa chính là CourseChapterId
+      const q =
+        "UPDATE CourseChapters SET OrderIndex = ? WHERE CourseChapterId = ?";
+
+      // index + 1: Để OrderIndex bắt đầu từ 1 thay vì 0
+      return query(q, [index + 1, courseChapterId]);
     });
 
+    // Chạy song song tất cả các lệnh update
     await Promise.all(promises);
-    return res.json({ message: "Order updated successfully" });
+
+    return res.json({ message: "Cập nhật thứ tự chương thành công." });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json(err);
+    console.error("Update Order Error:", err);
+    return res.status(500).json({ error: "Lỗi server khi sắp xếp chương." });
   }
 };
 
@@ -346,8 +375,9 @@ export const importChapters = async (req, res) => {
     }
 
     // 2. Lấy OrderIndex hiện tại cao nhất của Lớp để nối tiếp
+    // SỬA: Bảng CourseChapters, không phải Chapters
     const qMaxOrder =
-      "SELECT COALESCE(MAX(OrderIndex), 0) as maxPos FROM Chapters WHERE ClassId = ?";
+      "SELECT COALESCE(MAX(OrderIndex), 0) as maxPos FROM CourseChapters WHERE ClassId = ?";
     const maxRes = await query(qMaxOrder, [classId]);
     let currentOrder = maxRes[0].maxPos;
 
@@ -355,23 +385,27 @@ export const importChapters = async (req, res) => {
     for (const mChapter of masterChapters) {
       currentOrder++;
 
-      // 3.1. Insert Chapter mới vào lớp (Bảng Chapters)
+      // 3.1. Insert Chapter mới vào lớp (Bảng CourseChapters)
+      // SỬA: Insert vào CourseChapters
+      // Lưu ý: Ta copy cả CourseId để biết chương này thuộc khóa nào, nhưng thêm ClassId để biết nó thuộc lớp nào
       const qInsertChap = `
-        INSERT INTO Chapters (ClassId, Title, Description, OrderIndex) 
-        VALUES (?, ?, ?, ?)
+        INSERT INTO CourseChapters (CourseId, ClassId, Title, Description, OrderIndex) 
+        VALUES (?, ?, ?, ?, ?)
       `;
       const resChap = await query(qInsertChap, [
-        classId,
+        mChapter.CourseId, // Giữ nguyên CourseId gốc
+        classId, // Gán vào ClassId hiện tại
         mChapter.Title,
         mChapter.Description,
         currentOrder,
       ]);
       const newChapterId = resChap.insertId;
 
-      // 3.2. Lấy các Master Lessons thuộc chương mẫu này (Từ bảng CourseLessons)
+      // 3.2. Lấy các Master Lessons thuộc chương mẫu này (Từ bảng Lessons)
+      // SỬA: Lấy từ bảng Lessons nơi ChapterId = MasterID
       const qGetMasterLessons = `
-        SELECT * FROM CourseLessons 
-        WHERE CourseChapterId = ? 
+        SELECT * FROM Lessons 
+        WHERE ChapterId = ? 
         ORDER BY OrderIndex ASC
       `;
       const masterLessons = await query(qGetMasterLessons, [
@@ -381,7 +415,7 @@ export const importChapters = async (req, res) => {
       // 3.3. Insert Lessons mới vào Chapter mới vừa tạo (Bảng Lessons)
       if (masterLessons.length > 0) {
         const lessonValues = masterLessons.map((mLesson) => [
-          newChapterId, // Link tới Chapter mới của lớp
+          newChapterId, // Link tới Chapter MỚI vừa tạo
           classId, // Link tới Lớp
           mLesson.Title,
           mLesson.Description,
